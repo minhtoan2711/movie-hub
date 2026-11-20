@@ -23,6 +23,7 @@
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   h1 { font-size: 18px; color: var(--accent); font-weight: 700; display: flex; align-items: center; gap: 6px; }
   .btn-icon { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  .btn-icon.warn { border-color: var(--amber); color: var(--amber); }
   
   /* API Box */
   #apiBox { background: var(--card); border: 1px solid var(--border); padding: 12px; border-radius: 10px; margin-bottom: 12px; display: none; }
@@ -59,8 +60,9 @@
   @media (min-width: 768px) { .mobile-tabs { display: none; } }
 
   /* Filter Banner */
-  #matchBanner { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--green); color: #a7f3d0; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; display: none; justify-content: space-between; align-items: center; gap: 8px; }
+  #matchBanner { background: rgba(16, 185, 129, 0.18); border: 1px solid var(--green); color: #a7f3d0; padding: 9px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; display: none; justify-content: space-between; align-items: center; gap: 8px; }
   #matchBanner.show { display: flex; }
+  #matchText { line-height: 1.4; word-break: break-word; }
 
   /* Grid Layout */
   .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
@@ -90,8 +92,8 @@
   /* Item Cards */
   .item { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px; margin-bottom: 8px; transition: 0.15s; }
   .item.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .item.match-exact { border-color: var(--green); background: rgba(16, 185, 129, 0.08); }
-  .item.match-source { border-color: var(--amber); }
+  .item.match-exact { border: 2px solid var(--green); background: rgba(16, 185, 129, 0.12); }
+  .item.match-source { border: 1.5px solid var(--amber); background: rgba(245, 158, 11, 0.06); }
   .item-title { font-size: 13px; font-weight: 600; line-height: 1.4; word-break: break-word; margin-bottom: 6px; }
   .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
   .tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--card); color: var(--muted); border: 1px solid var(--border); }
@@ -110,24 +112,24 @@
   .btn-os { background: var(--amber); color: #451a03; }
   .btn-mag { background: var(--green); color: #052e16; }
   .btn-copy { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-  .status { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+  .status { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; line-height: 1.5; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>🎬 Movie & Sub Hub Pro</h1>
-  <button class="btn-icon" onclick="toggleApiBox()">⚙️ Cấu hình API</button>
+  <button class="btn-icon" id="btnApiConfig" onclick="toggleApiBox()">⚙️ Cấu hình API</button>
 </header>
 
 <div id="apiBox">
   <div class="api-group">
-    <label>1. SubDL API Key</label>
+    <label>1. SubDL API Key (Bắt buộc để hiện tên bản release chi tiết)</label>
     <small>Lấy miễn phí tại subdl.com → Tài khoản → API → Generate Key</small>
     <input type="text" id="subdlKeyInput" placeholder="Dán SubDL API Key tại đây...">
   </div>
   <div class="api-group">
-    <label>2. OpenSubtitles.com API Key</label>
+    <label>2. OpenSubtitles.com API Key (Khuyên dùng)</label>
     <small>Lấy tại opensubtitles.com → API → Consumers</small>
     <input type="text" id="osKeyInput" placeholder="Dán OpenSubtitles API Key tại đây...">
   </div>
@@ -229,6 +231,11 @@
     const osKey = localStorage.getItem('os_api_key');
     if (subdlKey) document.getElementById('subdlKeyInput').value = subdlKey;
     if (osKey) document.getElementById('osKeyInput').value = osKey;
+    if (!subdlKey && !osKey) {
+      document.getElementById('apiBox').classList.add('show');
+      document.getElementById('btnApiConfig').classList.add('warn');
+      document.getElementById('btnApiConfig').innerText = '⚠️ Nhập API Key';
+    }
   };
 
   function toggleApiBox() {
@@ -243,6 +250,8 @@
     if (osKey) localStorage.setItem('os_api_key', osKey);
     else localStorage.removeItem('os_api_key');
     document.getElementById('apiBox').classList.remove('show');
+    document.getElementById('btnApiConfig').classList.remove('warn');
+    document.getElementById('btnApiConfig').innerText = '⚙️ Cấu hình API';
     alert('Đã lưu cấu hình API!');
   }
 
@@ -281,15 +290,29 @@
     renderTorrents();
   }
 
-  // Hàm fetch tự động vượt qua CORS proxy nếu gọi trực tiếp bị chặn trên GitHub Pages
-  async function fetchWithCorsFallback(url, options = {}) {
+  // Hàm fetch đa tầng proxy cho GET request (vượt chặn CORS trên GitHub Pages & Mobile)
+  async function fetchJsonWithProxy(url) {
+    const proxies = [
+      url,
+      `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    ];
+    for (const target of proxies) {
+      try {
+        const res = await fetch(target);
+        if (res.ok) return await res.json();
+      } catch (e) {}
+    }
+    throw new Error('Không thể kết nối API');
+  }
+
+  // Hàm fetch với custom headers (dùng cho OpenSubtitles.com API)
+  async function fetchWithHeadersProxy(url, options = {}) {
     try {
       const res = await fetch(url, options);
       if (res.ok) return res;
     } catch (e) {}
-    // Fallback qua corsproxy.io
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    return await fetch(proxyUrl, options);
+    return await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, options);
   }
 
   function parseReleaseInfo(name) {
@@ -303,7 +326,7 @@
 
     let source = 'KHÁC';
     if (/BLURAY|BLU-RAY|BDRIP|BRRIP|REMUX|BDREMUX/.test(upper)) source = 'BLURAY';
-    else if (/WEB-DL|WEBDL|WEBRIP|AMZN|NF\.|DSNP|ATVP|HMAX|WEB\b/.test(upper)) source = 'WEB-DL';
+    else if (/WEB-DL|WEBDL|WEBRIP|AMZN|NF\.|DSNP|ATVP|HMAX|IT\.WEB|WEB\b/.test(upper)) source = 'WEB-DL';
     else if (isCam) source = 'CAM/RẠP';
 
     let group = '';
@@ -334,7 +357,6 @@
     return gb >= 1 ? `${gb.toFixed(2)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
   }
 
-  // Bước 1: Dùng Cinemeta API (hỗ trợ CORS 100%) để tìm chính xác IMDb ID của phim
   async function searchAll() {
     const query = document.getElementById('queryInput').value.trim();
     if (!query) return;
@@ -351,7 +373,6 @@
       const metaData = await metaRes.json();
       let metas = (metaData.metas || []).filter(m => m.imdb_id && m.imdb_id.startsWith('tt'));
 
-      // Nếu đang chọn Phim lẻ nhưng không có kết quả, thử quét sang Phim bộ
       if (metas.length === 0) {
         const altType = mediaType === 'movie' ? 'series' : 'movie';
         const altRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${altType}/top/search=${encodeURIComponent(query)}.json`);
@@ -365,14 +386,9 @@
         const first = metas[0];
         await loadByImdb(first.imdb_id, first.name || query);
       } else {
-        // Fallback tìm theo từ khóa nếu không ra IMDb ID
-        currentImdbId = null;
-        currentTitle = query;
         await loadByImdb(null, query);
       }
     } catch (err) {
-      currentImdbId = null;
-      currentTitle = query;
       await loadByImdb(null, query);
     }
   }
@@ -408,14 +424,20 @@
     const season = parseInt(document.getElementById('seasonInput').value) || 1;
     const episode = parseInt(document.getElementById('episodeInput').value) || 1;
 
-    // Chạy song song tìm Phụ đề và tìm Torrent
     const [subdlList, osList] = await Promise.all([
       fetchSubDL(title, imdbId, season, episode),
       fetchOpenSubtitles(title, imdbId, season, episode),
       fetchTorrents(title, imdbId, season, episode)
     ]);
 
-    currentSubs = [...subdlList, ...osList];
+    let combined = [...subdlList, ...osList];
+    // Nếu đã có kết quả chi tiết từ SubDL hoặc OpenSubtitles chính thức, ẩn các dòng tên giả của OS v3
+    const hasRealNames = combined.some(s => !s.isPlaceholder);
+    if (hasRealNames) {
+      combined = combined.filter(s => !s.isPlaceholder);
+    }
+
+    currentSubs = combined;
     renderSubtitles();
   }
 
@@ -431,8 +453,7 @@
         subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
       }
 
-      const res = await fetchWithCorsFallback(subUrl);
-      const data = await res.json();
+      const data = await fetchJsonWithProxy(subUrl);
       return (data.subtitles || []).map(s => {
         const relName = s.release_name || s.name || 'SubDL Release';
         const info = parseReleaseInfo(relName);
@@ -443,7 +464,9 @@
           downloadUrl: `https://dl.subdl.com${s.url}`,
           source: info.source,
           group: info.group,
-          downloads: 0
+          resolution: info.resolution,
+          downloads: 0,
+          isPlaceholder: false
         };
       });
     } catch (e) {
@@ -456,7 +479,6 @@
     let osSubs = [];
     const osKey = localStorage.getItem('os_api_key');
 
-    // Nguồn 1: OpenSubtitles.com REST API (nếu có API Key)
     if (osKey) {
       try {
         const cleanImdb = imdbId ? imdbId.replace(/^tt/, '') : '';
@@ -468,8 +490,8 @@
           endpoint += `&season_number=${season}&episode_number=${episode}`;
         }
 
-        const res = await fetchWithCorsFallback(endpoint, {
-          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v3.0' }
+        const res = await fetchWithHeadersProxy(endpoint, {
+          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v3.1' }
         });
         if (res.ok) {
           const json = await res.json();
@@ -486,14 +508,15 @@
               osFileId: fileId,
               source: info.source,
               group: info.group,
-              downloads: attr.download_count || 0
+              resolution: info.resolution,
+              downloads: attr.download_count || 0,
+              isPlaceholder: false
             });
           });
         }
       } catch (e) { console.log('OS Official error:', e); }
     }
 
-    // Nguồn 2: OpenSubtitles v3 Public Addon (Luôn hoạt động, không cần Key, tải trực tiếp .srt)
     if (imdbId) {
       try {
         const stremioPath = mediaType === 'tv'
@@ -504,7 +527,8 @@
           const v3Data = await v3Res.json();
           const viSubs = (v3Data.subtitles || []).filter(s => s.lang === 'vie' || s.lang === 'vi');
           viSubs.forEach((s, i) => {
-            const titleGuess = s.title || `OpenSubtitles.VI.#${i + 1} (${imdbId})`;
+            const hasRealTitle = Boolean(s.title && s.title.trim());
+            const titleGuess = hasRealTitle ? s.title : `Bản dịch Tiếng Việt #${i + 1} (Chưa nhập API Key nên ẩn tên file)`;
             const info = parseReleaseInfo(titleGuess);
             osSubs.push({
               provider: 'OpenSubtitles v3',
@@ -513,7 +537,9 @@
               downloadUrl: s.url,
               source: info.source,
               group: info.group,
-              downloads: 0
+              resolution: info.resolution,
+              downloads: 0,
+              isPlaceholder: !hasRealTitle
             });
           });
         }
@@ -527,9 +553,9 @@
     const osKey = localStorage.getItem('os_api_key');
     if (!osKey || !fileId) return window.open(fallbackUrl, '_blank');
     try {
-      const res = await fetchWithCorsFallback('https://api.opensubtitles.com/api/v1/download', {
+      const res = await fetchWithHeadersProxy('https://api.opensubtitles.com/api/v1/download', {
         method: 'POST',
-        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v3.0' },
+        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v3.1' },
         body: JSON.stringify({ file_id: fileId })
       });
       const data = await res.json();
@@ -574,7 +600,6 @@
 
     const tasks = [];
 
-    // 1. YTS API (Dùng cả tên miền chính và dự phòng yts.lt)
     if (mediaType === 'movie') {
       tasks.push((async () => {
         const domains = ['https://yts.mx', 'https://yts.lt'];
@@ -611,7 +636,6 @@
       })());
     }
 
-    // 2. Torrentio API
     if (imdbId) {
       tasks.push((async () => {
         try {
@@ -636,7 +660,6 @@
         } catch (e) {}
       })());
 
-      // 3. MediaFusion API
       tasks.push((async () => {
         try {
           const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
@@ -662,7 +685,6 @@
       })());
     }
 
-    // 4. Knaben API
     tasks.push((async () => {
       try {
         const res = await fetch('https://api.knaben.org/v1', {
@@ -709,7 +731,16 @@
       return;
     }
 
-    box.innerHTML = currentSubs.map((s, idx) => {
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    const osKey = localStorage.getItem('os_api_key');
+    let warnHtml = '';
+    if (!subdlKey && !osKey) {
+      warnHtml = `<div style="background:rgba(245,158,11,0.12);border:1px solid var(--amber);color:#fde68a;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:10px;">
+        ⚠️ Bạn chưa nhập API Key trên thiết bị này nên không hiện tên bản release chi tiết. Bấm <b>⚙️ Cấu hình API</b> ở góc trên để dán Key.
+      </div>`;
+    }
+
+    box.innerHTML = warnHtml + currentSubs.map((s, idx) => {
       const isOs = s.provider.startsWith('OpenSubtitles');
       const dlBtn = s.osFileId
         ? `<button class="btn-sm btn-os" onclick="downloadOsOfficial(${s.osFileId}, '${s.downloadUrl}')">⬇️ Tải Sub (OS)</button>`
@@ -720,6 +751,7 @@
           <div class="item-title">${s.release}</div>
           <div class="tags">
             <span class="tag ${isOs ? 'provider-os' : 'provider-subdl'}">${s.provider}</span>
+            ${s.resolution !== 'OTHER' ? `<span class="tag res">${s.resolution}</span>` : ''}
             <span class="tag src">${s.source}</span>
             ${s.group ? `<span class="tag grp">Nhóm: ${s.group}</span>` : ''}
             ${s.downloads > 0 ? `<span class="tag">⬇️ ${s.downloads}</span>` : ''}
@@ -737,7 +769,7 @@
   function selectSubtitle(idx, autoSwitchMobile = false) {
     selectedSubIndex = idx;
     const sub = currentSubs[idx];
-    document.getElementById('matchText').innerText = `Khớp với: ${sub.source} ${sub.group ? '• Nhóm ' + sub.group : ''}`;
+    document.getElementById('matchText').innerHTML = `🎯 Đang khớp với sub: <b>${sub.release}</b>`;
     document.getElementById('matchBanner').classList.add('show');
     renderSubtitles();
     renderTorrents();
@@ -752,6 +784,28 @@
     document.getElementById('matchBanner').classList.remove('show');
     renderSubtitles();
     renderTorrents();
+  }
+
+  function computeMatchScore(sub, tor) {
+    if (!sub) return { matchType: 'none', score: 0 };
+    const subUpper = sub.release.toUpperCase();
+    const torUpper = tor.title.toUpperCase();
+
+    // 1. Trùng tên nhóm phát hành (VD: BTM, YTS, FLUX, QxR...)
+    const sameGroup = sub.group && tor.group && (tor.group.includes(sub.group) || sub.group.includes(tor.group));
+    if (sameGroup) return { matchType: 'exact', score: 100 };
+
+    // 2. Trùng từ khóa đặc trưng trong tên file (VD: iT.WEB-DL, AMZN, DDP5.1...)
+    const tokens = subUpper.split(/[\s.\-_[\]()]+/).filter(w => w.length >= 3 && !['2024','2025','2026','1080P','2160P','720P','X264','X265','H264','H265','AAC','VIE','SRT'].includes(w));
+    let tokenHits = 0;
+    tokens.forEach(tk => { if (torUpper.includes(tk)) tokenHits++; });
+
+    const sameSource = sub.source !== 'KHÁC' && sub.source === tor.source;
+    if (sameSource && tokenHits >= 2) return { matchType: 'exact', score: 90 };
+    if (sameSource) return { matchType: 'source', score: 50 };
+    if (tokenHits >= 2) return { matchType: 'source', score: 40 };
+
+    return { matchType: 'none', score: 0 };
   }
 
   function renderTorrents() {
@@ -771,15 +825,8 @@
     });
 
     const scored = filtered.map(t => {
-      let matchType = 'none';
-      let score = 0;
-      if (selectedSub) {
-        const sameGroup = selectedSub.group && t.group && (t.group.includes(selectedSub.group) || selectedSub.group.includes(t.group));
-        const sameSource = selectedSub.source !== 'KHÁC' && selectedSub.source === t.source;
-        if (sameGroup) { matchType = 'exact'; score = 100; }
-        else if (sameSource) { matchType = 'source'; score = 50; }
-      }
-      return { ...t, matchType, score };
+      const m = computeMatchScore(selectedSub, t);
+      return { ...t, matchType: m.matchType, score: m.score };
     });
 
     const resOrder = ['2160p', '1080p', '720p'];
@@ -808,7 +855,7 @@
         <div class="item ${t.matchType === 'exact' ? 'match-exact' : (t.matchType === 'source' ? 'match-source' : '')}">
           <div class="item-title">${t.title}</div>
           <div class="tags">
-            ${t.matchType === 'exact' ? `<span class="tag exact">✓ KHỚP NHÓM 100%</span>` : ''}
+            ${t.matchType === 'exact' ? `<span class="tag exact">✓ KHỚP PHỤ ĐỀ 100%</span>` : ''}
             ${t.matchType === 'source' ? `<span class="tag partial">≈ KHỚP NGUỒN (${t.source})</span>` : ''}
             <span class="tag res">${t.resolution}</span>
             <span class="tag src">${t.source}</span>
