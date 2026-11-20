@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Movie & Sub Hub Pro (SubDL + OpenSubtitles + Multi-Torrent)</title>
+<title>Movie & Sub Hub Pro</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -122,12 +122,12 @@
 
 <div id="apiBox">
   <div class="api-group">
-    <label>1. SubDL API Key (Bắt buộc)</label>
+    <label>1. SubDL API Key</label>
     <small>Lấy miễn phí tại subdl.com → Tài khoản → API → Generate Key</small>
     <input type="text" id="subdlKeyInput" placeholder="Dán SubDL API Key tại đây...">
   </div>
   <div class="api-group">
-    <label>2. OpenSubtitles.com API Key (Khuyên dùng)</label>
+    <label>2. OpenSubtitles.com API Key</label>
     <small>Lấy tại opensubtitles.com → API → Consumers</small>
     <input type="text" id="osKeyInput" placeholder="Dán OpenSubtitles API Key tại đây...">
   </div>
@@ -146,11 +146,11 @@
     <button class="type-btn" id="btnTypeTv" onclick="setMediaType('tv')">📺 Phim bộ (Series)</button>
   </div>
   <div class="ep-inputs" id="epInputs">
-    <span>Mùa (Season):</span>
+    <span>Mùa:</span>
     <input type="number" id="seasonInput" value="1" min="1" max="99">
-    <span>Tập (Ep):</span>
+    <span>Tập:</span>
     <input type="number" id="episodeInput" value="1" min="1" max="999">
-    <button class="btn-sm btn-copy" onclick="searchAll()">Lọc tập</button>
+    <button class="btn-sm btn-copy" onclick="reloadCurrentMovie()">Lọc tập</button>
   </div>
 </div>
 
@@ -214,6 +214,8 @@
 
 <script>
   let mediaType = 'movie';
+  let currentImdbId = null;
+  let currentTitle = '';
   let currentSubs = [];
   let currentTorrents = [];
   let selectedSubIndex = null;
@@ -227,7 +229,6 @@
     const osKey = localStorage.getItem('os_api_key');
     if (subdlKey) document.getElementById('subdlKeyInput').value = subdlKey;
     if (osKey) document.getElementById('osKeyInput').value = osKey;
-    if (!subdlKey) document.getElementById('apiBox').classList.add('show');
   };
 
   function toggleApiBox() {
@@ -237,8 +238,8 @@
   function saveApiKeys() {
     const subdlKey = document.getElementById('subdlKeyInput').value.trim();
     const osKey = document.getElementById('osKeyInput').value.trim();
-    if (!subdlKey) return alert('Vui lòng nhập SubDL API Key!');
-    localStorage.setItem('subdl_api_key', subdlKey);
+    if (subdlKey) localStorage.setItem('subdl_api_key', subdlKey);
+    else localStorage.removeItem('subdl_api_key');
     if (osKey) localStorage.setItem('os_api_key', osKey);
     else localStorage.removeItem('os_api_key');
     document.getElementById('apiBox').classList.remove('show');
@@ -278,6 +279,17 @@
     document.querySelectorAll('[data-lim]').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
     renderTorrents();
+  }
+
+  // Hàm fetch tự động vượt qua CORS proxy nếu gọi trực tiếp bị chặn trên GitHub Pages
+  async function fetchWithCorsFallback(url, options = {}) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+    } catch (e) {}
+    // Fallback qua corsproxy.io
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    return await fetch(proxyUrl, options);
   }
 
   function parseReleaseInfo(name) {
@@ -322,64 +334,121 @@
     return gb >= 1 ? `${gb.toFixed(2)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
   }
 
+  // Bước 1: Dùng Cinemeta API (hỗ trợ CORS 100%) để tìm chính xác IMDb ID của phim
   async function searchAll() {
     const query = document.getElementById('queryInput').value.trim();
-    const subdlKey = localStorage.getItem('subdl_api_key');
-    if (!subdlKey) {
-      document.getElementById('apiBox').classList.add('show');
-      return alert('Bạn cần nhập SubDL API Key trước!');
-    }
     if (!query) return;
 
     selectedSubIndex = null;
     document.getElementById('matchBanner').classList.remove('show');
     document.getElementById('movieList').innerHTML = '';
-    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tìm phụ đề tiếng Việt...</div>';
-    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang quét nguồn torrent...</div>';
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang nhận diện phim & tìm phụ đề...</div>';
+    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang chuẩn bị quét nguồn torrent...</div>';
+
+    try {
+      const catalogType = mediaType === 'tv' ? 'series' : 'movie';
+      const metaRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${catalogType}/top/search=${encodeURIComponent(query)}.json`);
+      const metaData = await metaRes.json();
+      let metas = (metaData.metas || []).filter(m => m.imdb_id && m.imdb_id.startsWith('tt'));
+
+      // Nếu đang chọn Phim lẻ nhưng không có kết quả, thử quét sang Phim bộ
+      if (metas.length === 0) {
+        const altType = mediaType === 'movie' ? 'series' : 'movie';
+        const altRes = await fetch(`https://v3-cinemeta.strem.io/catalog/${altType}/top/search=${encodeURIComponent(query)}.json`);
+        const altData = await altRes.json();
+        metas = (altData.metas || []).filter(m => m.imdb_id && m.imdb_id.startsWith('tt'));
+        if (metas.length > 0) setMediaType(altType === 'series' ? 'tv' : 'movie');
+      }
+
+      if (metas.length > 0) {
+        renderMovieChips(metas);
+        const first = metas[0];
+        await loadByImdb(first.imdb_id, first.name || query);
+      } else {
+        // Fallback tìm theo từ khóa nếu không ra IMDb ID
+        currentImdbId = null;
+        currentTitle = query;
+        await loadByImdb(null, query);
+      }
+    } catch (err) {
+      currentImdbId = null;
+      currentTitle = query;
+      await loadByImdb(null, query);
+    }
+  }
+
+  function renderMovieChips(metas) {
+    const box = document.getElementById('movieList');
+    box.innerHTML = metas.slice(0, 10).map((m, idx) => `
+      <div class="movie-chip ${idx === 0 ? 'active' : ''}" onclick="selectMovieChip('${m.imdb_id}', '${(m.name || '').replace(/'/g, "\\'")}', this)">
+        ${m.type === 'series' ? '📺' : '🎬'} ${m.name} (${m.releaseInfo || m.year || '?'})
+      </div>
+    `).join('');
+  }
+
+  async function selectMovieChip(imdbId, title, el) {
+    document.querySelectorAll('.movie-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    await loadByImdb(imdbId, title);
+  }
+
+  async function reloadCurrentMovie() {
+    if (currentTitle || currentImdbId) {
+      await loadByImdb(currentImdbId, currentTitle);
+    }
+  }
+
+  async function loadByImdb(imdbId, title) {
+    currentImdbId = imdbId;
+    currentTitle = title;
+    selectedSubIndex = null;
+    document.getElementById('matchBanner').classList.remove('show');
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang quét SubDL & OpenSubtitles...</div>';
 
     const season = parseInt(document.getElementById('seasonInput').value) || 1;
     const episode = parseInt(document.getElementById('episodeInput').value) || 1;
 
+    // Chạy song song tìm Phụ đề và tìm Torrent
+    const [subdlList, osList] = await Promise.all([
+      fetchSubDL(title, imdbId, season, episode),
+      fetchOpenSubtitles(title, imdbId, season, episode),
+      fetchTorrents(title, imdbId, season, episode)
+    ]);
+
+    currentSubs = [...subdlList, ...osList];
+    renderSubtitles();
+  }
+
+  async function fetchSubDL(query, imdbId, season, episode) {
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    if (!subdlKey) return [];
     try {
-      let subUrl = `https://api.subdl.com/api/v1/subtitles?api_key=${encodeURIComponent(subdlKey)}&film_name=${encodeURIComponent(query)}&languages=VI&subs_per_page=30`;
+      let subUrl = `https://api.subdl.com/api/v1/subtitles?api_key=${encodeURIComponent(subdlKey)}&languages=VI&subs_per_page=30`;
+      if (imdbId) subUrl += `&imdb_id=${imdbId}`;
+      else subUrl += `&film_name=${encodeURIComponent(query)}`;
+
       if (mediaType === 'tv') {
         subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
       }
 
-      const res = await fetch(subUrl);
+      const res = await fetchWithCorsFallback(subUrl);
       const data = await res.json();
-      const results = data.results || [];
-
-      if (results.length > 0 && results[0].type === 'tv' && mediaType === 'movie') {
-        setMediaType('tv');
-      }
-
-      renderMovieChips(results, query);
-
-      let subdlList = (data.subtitles || []).map(s => {
-        const relName = s.release_name || s.name || 'Unknown';
+      return (data.subtitles || []).map(s => {
+        const relName = s.release_name || s.name || 'SubDL Release';
         const info = parseReleaseInfo(relName);
         return {
           provider: 'SubDL',
           release: relName,
           author: s.author || 'Ẩn danh',
           downloadUrl: `https://dl.subdl.com${s.url}`,
-          imdbId: s.imdb_id || (results[0] && results[0].imdb_id) || null,
           source: info.source,
           group: info.group,
           downloads: 0
         };
       });
-
-      const imdbId = subdlList.find(s => s.imdbId)?.imdbId || (results[0] && results[0].imdb_id) || null;
-      const osList = await fetchOpenSubtitles(query, imdbId, season, episode);
-
-      currentSubs = [...subdlList, ...osList];
-      renderSubtitles();
-      fetchTorrents(query, imdbId, season, episode);
-
-    } catch (err) {
-      document.getElementById('subContainer').innerHTML = `<div class="status">Lỗi tìm kiếm: ${err.message}</div>`;
+    } catch (e) {
+      console.log('SubDL error:', e);
+      return [];
     }
   }
 
@@ -387,6 +456,7 @@
     let osSubs = [];
     const osKey = localStorage.getItem('os_api_key');
 
+    // Nguồn 1: OpenSubtitles.com REST API (nếu có API Key)
     if (osKey) {
       try {
         const cleanImdb = imdbId ? imdbId.replace(/^tt/, '') : '';
@@ -398,8 +468,8 @@
           endpoint += `&season_number=${season}&episode_number=${episode}`;
         }
 
-        const res = await fetch(endpoint, {
-          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v2.0' }
+        const res = await fetchWithCorsFallback(endpoint, {
+          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v3.0' }
         });
         if (res.ok) {
           const json = await res.json();
@@ -414,7 +484,6 @@
               author: (attr.uploader && attr.uploader.name) || 'OS User',
               downloadUrl: attr.url || `https://www.opensubtitles.com/vi/subtitles/${item.id}`,
               osFileId: fileId,
-              imdbId: imdbId,
               source: info.source,
               group: info.group,
               downloads: attr.download_count || 0
@@ -424,6 +493,7 @@
       } catch (e) { console.log('OS Official error:', e); }
     }
 
+    // Nguồn 2: OpenSubtitles v3 Public Addon (Luôn hoạt động, không cần Key, tải trực tiếp .srt)
     if (imdbId) {
       try {
         const stremioPath = mediaType === 'tv'
@@ -441,7 +511,6 @@
               release: titleGuess,
               author: 'OpenSubtitles DB',
               downloadUrl: s.url,
-              imdbId: imdbId,
               source: info.source,
               group: info.group,
               downloads: 0
@@ -458,9 +527,9 @@
     const osKey = localStorage.getItem('os_api_key');
     if (!osKey || !fileId) return window.open(fallbackUrl, '_blank');
     try {
-      const res = await fetch('https://api.opensubtitles.com/api/v1/download', {
+      const res = await fetchWithCorsFallback('https://api.opensubtitles.com/api/v1/download', {
         method: 'POST',
-        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v2.0' },
+        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v3.0' },
         body: JSON.stringify({ file_id: fileId })
       });
       const data = await res.json();
@@ -469,55 +538,6 @@
     } catch (e) {
       window.open(fallbackUrl, '_blank');
     }
-  }
-
-  function renderMovieChips(results, query) {
-    const box = document.getElementById('movieList');
-    if (results.length <= 1) return;
-    box.innerHTML = results.slice(0, 8).map((m, idx) => `
-      <div class="movie-chip ${idx === 0 ? 'active' : ''}" onclick="selectMovieByImdb('${m.imdb_id}', '${(m.name || query).replace(/'/g, "\\'")}', '${m.type || 'movie'}', this)">
-        ${m.type === 'tv' ? '📺' : '🎬'} ${m.name} (${m.year || '?'})
-      </div>
-    `).join('');
-  }
-
-  async function selectMovieByImdb(imdbId, name, type, el) {
-    document.querySelectorAll('.movie-chip').forEach(c => c.classList.remove('active'));
-    el.classList.add('active');
-    if (type === 'tv' || type === 'movie') setMediaType(type);
-
-    const subdlKey = localStorage.getItem('subdl_api_key');
-    const season = parseInt(document.getElementById('seasonInput').value) || 1;
-    const episode = parseInt(document.getElementById('episodeInput').value) || 1;
-
-    selectedSubIndex = null;
-    document.getElementById('matchBanner').classList.remove('show');
-    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tải phụ đề...</div>';
-
-    let subUrl = `https://api.subdl.com/api/v1/subtitles?api_key=${encodeURIComponent(subdlKey)}&imdb_id=${imdbId}&languages=VI&subs_per_page=30`;
-    if (mediaType === 'tv') subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
-
-    const res = await fetch(subUrl);
-    const data = await res.json();
-    const subdlList = (data.subtitles || []).map(s => {
-      const relName = s.release_name || s.name || 'Unknown';
-      const info = parseReleaseInfo(relName);
-      return {
-        provider: 'SubDL',
-        release: relName,
-        author: s.author || 'Ẩn danh',
-        downloadUrl: `https://dl.subdl.com${s.url}`,
-        imdbId: imdbId,
-        source: info.source,
-        group: info.group,
-        downloads: 0
-      };
-    });
-
-    const osList = await fetchOpenSubtitles(name, imdbId, season, episode);
-    currentSubs = [...subdlList, ...osList];
-    renderSubtitles();
-    fetchTorrents(name, imdbId, season, episode);
   }
 
   async function fetchTorrents(query, imdbId, season, episode) {
@@ -532,7 +552,6 @@
       if (!item.hash) return;
       const hash = item.hash.toLowerCase();
       const info = parseReleaseInfo(item.title);
-
       if (info.isCam || info.resolution === 'OTHER') return;
 
       const sizeGB = parseSizeToGB(item.size);
@@ -555,34 +574,44 @@
 
     const tasks = [];
 
+    // 1. YTS API (Dùng cả tên miền chính và dự phòng yts.lt)
     if (mediaType === 'movie') {
       tasks.push((async () => {
-        try {
-          const ytsParam = imdbId ? `query_term=${encodeURIComponent(imdbId)}` : `query_term=${encodeURIComponent(query)}`;
-          const res = await fetch(`https://yts.mx/api/v2/list_movies.json?${ytsParam}`);
-          const data = await res.json();
-          (data?.data?.movies || []).forEach(m => {
-            (m.torrents || []).forEach(t => {
-              const fullTitle = `${m.title_english || m.title} (${m.year}) ${t.quality} ${t.type.toUpperCase()} [YTS.MX]`;
-              const trackers = [
-                'udp://tracker.opentrackr.org:1337/announce',
-                'udp://open.stealth.si:80/announce',
-                'udp://tracker.torrent.eu.org:451/announce'
-              ].map(tr => `&tr=${encodeURIComponent(tr)}`).join('');
-              addTorrent({
-                hash: t.hash,
-                title: fullTitle,
-                size: t.size,
-                seeds: t.seeds,
-                tracker: 'YTS',
-                magnet: `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(fullTitle)}${trackers}`
+        const domains = ['https://yts.mx', 'https://yts.lt'];
+        for (const domain of domains) {
+          try {
+            const ytsParam = imdbId ? `query_term=${encodeURIComponent(imdbId)}` : `query_term=${encodeURIComponent(query)}`;
+            const res = await fetch(`${domain}/api/v2/list_movies.json?${ytsParam}`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const movies = data?.data?.movies || [];
+            if (movies.length > 0) {
+              movies.forEach(m => {
+                (m.torrents || []).forEach(t => {
+                  const fullTitle = `${m.title_english || m.title} (${m.year}) ${t.quality} ${t.type.toUpperCase()} [YTS.MX]`;
+                  const trackers = [
+                    'udp://tracker.opentrackr.org:1337/announce',
+                    'udp://open.stealth.si:80/announce',
+                    'udp://tracker.torrent.eu.org:451/announce'
+                  ].map(tr => `&tr=${encodeURIComponent(tr)}`).join('');
+                  addTorrent({
+                    hash: t.hash,
+                    title: fullTitle,
+                    size: t.size,
+                    seeds: t.seeds,
+                    tracker: 'YTS',
+                    magnet: `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(fullTitle)}${trackers}`
+                  });
+                });
               });
-            });
-          });
-        } catch (e) {}
+              break;
+            }
+          } catch (e) {}
+        }
       })());
     }
 
+    // 2. Torrentio API
     if (imdbId) {
       tasks.push((async () => {
         try {
@@ -607,6 +636,7 @@
         } catch (e) {}
       })());
 
+      // 3. MediaFusion API
       tasks.push((async () => {
         try {
           const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
@@ -632,6 +662,7 @@
       })());
     }
 
+    // 4. Knaben API
     tasks.push((async () => {
       try {
         const res = await fetch('https://api.knaben.org/v1', {
@@ -674,7 +705,7 @@
     document.getElementById('mobSubCount').innerText = currentSubs.length;
 
     if (currentSubs.length === 0) {
-      box.innerHTML = '<div class="status">Không tìm thấy phụ đề tiếng Việt.</div>';
+      box.innerHTML = '<div class="status">Không tìm thấy phụ đề tiếng Việt cho phim này.</div>';
       return;
     }
 
