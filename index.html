@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Movie & Sub Hub Pro (SubDL + OpenSubtitles + Multi-Torrent)</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --card-sub: #162032;
+    --border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { background: var(--bg); color: var(--text); padding: 12px; padding-bottom: 60px; max-width: 1440px; margin: 0 auto; }
+  
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  h1 { font-size: 18px; color: var(--accent); font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .btn-icon { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  
+  /* API Box */
+  #apiBox { background: var(--card); border: 1px solid var(--border); padding: 12px; border-radius: 10px; margin-bottom: 12px; display: none; }
+  #apiBox.show { display: block; }
+  .api-group { margin-bottom: 10px; }
+  .api-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+  .api-group small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  #apiBox input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
+  
+  /* Search & Type Bar */
+  .search-wrap { display: flex; gap: 8px; margin-bottom: 10px; }
+  .search-wrap input { flex: 1; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 15px; outline: none; min-width: 0; }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap button { background: var(--accent); color: #0f172a; font-weight: 700; border: none; padding: 0 16px; border-radius: 10px; font-size: 14px; cursor: pointer; flex-shrink: 0; }
+
+  /* Series Controls */
+  .series-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; background: var(--card); padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); }
+  .type-toggle { display: flex; background: var(--bg); border-radius: 7px; padding: 2px; border: 1px solid var(--border); }
+  .type-btn { padding: 5px 10px; font-size: 12px; font-weight: 600; border: none; background: transparent; color: var(--muted); border-radius: 5px; cursor: pointer; }
+  .type-btn.active { background: var(--accent); color: #0f172a; }
+  .ep-inputs { display: none; align-items: center; gap: 6px; font-size: 12px; }
+  .ep-inputs.show { display: flex; }
+  .ep-inputs input { width: 54px; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); text-align: center; font-weight: 600; }
+
+  /* Movie Selector Chips */
+  #movieList { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+  .movie-chip { background: var(--card); border: 1px solid var(--border); padding: 7px 11px; border-radius: 8px; white-space: nowrap; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+  .movie-chip.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.15); color: var(--accent); font-weight: 600; }
+
+  /* Mobile Tabs */
+  .mobile-tabs { display: flex; gap: 8px; margin-bottom: 10px; position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 4px 0; }
+  .mob-tab { flex: 1; padding: 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; }
+  .mob-tab.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+  @media (min-width: 768px) { .mobile-tabs { display: none; } }
+
+  /* Filter Banner */
+  #matchBanner { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--green); color: #a7f3d0; padding: 8px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; display: none; justify-content: space-between; align-items: center; gap: 8px; }
+  #matchBanner.show { display: flex; }
+
+  /* Grid Layout */
+  .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  @media (max-width: 767px) {
+    .panel.mob-hidden { display: none; }
+  }
+
+  .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .panel-title { font-size: 15px; font-weight: 700; }
+  .count-badge { background: var(--bg); padding: 2px 8px; border-radius: 12px; font-size: 12px; color: var(--muted); }
+
+  /* Torrent Filter Controls */
+  .tor-filters { background: var(--card-sub); border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 7px; }
+  .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+  .filter-label { font-size: 11px; color: var(--muted); font-weight: 600; min-width: 62px; }
+  .f-pill { font-size: 11px; padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; font-weight: 600; }
+  .f-pill.active { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+  .f-pill.limit-pill.active { background: var(--purple); color: #fff; border-color: var(--purple); }
+
+  /* Resolution Section Header */
+  .res-header { font-size: 12px; font-weight: 700; color: var(--accent); background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--accent); padding: 5px 8px; margin: 10px 0 6px 0; border-radius: 0 6px 6px 0; display: flex; justify-content: space-between; }
+  .res-header:first-child { margin-top: 0; }
+
+  /* Item Cards */
+  .item { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px; margin-bottom: 8px; transition: 0.15s; }
+  .item.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .item.match-exact { border-color: var(--green); background: rgba(16, 185, 129, 0.08); }
+  .item.match-source { border-color: var(--amber); }
+  .item-title { font-size: 13px; font-weight: 600; line-height: 1.4; word-break: break-word; margin-bottom: 6px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--card); color: var(--muted); border: 1px solid var(--border); }
+  .tag.provider-subdl { color: #38bdf8; border-color: rgba(56,189,248,0.4); font-weight: 600; }
+  .tag.provider-os { color: #fbbf24; border-color: rgba(251,191,36,0.4); font-weight: 600; }
+  .tag.src { color: #4ade80; border-color: rgba(74,222,128,0.3); }
+  .tag.grp { color: #c084fc; border-color: rgba(192,132,252,0.4); }
+  .tag.res { color: #38bdf8; font-weight: 700; }
+  .tag.exact { background: var(--green); color: #052e16; font-weight: 700; border: none; }
+  .tag.partial { background: var(--amber); color: #451a03; font-weight: 700; border: none; }
+  .tag.seed { color: #4ade80; font-weight: 600; }
+
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn-sm { padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .btn-sub { background: var(--accent); color: #0f172a; }
+  .btn-os { background: var(--amber); color: #451a03; }
+  .btn-mag { background: var(--green); color: #052e16; }
+  .btn-copy { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .status { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎬 Movie & Sub Hub Pro</h1>
+  <button class="btn-icon" onclick="toggleApiBox()">⚙️ Cấu hình API</button>
+</header>
+
+<div id="apiBox">
+  <div class="api-group">
+    <label>1. SubDL API Key (Bắt buộc)</label>
+    <small>Lấy miễn phí tại subdl.com → Tài khoản → API → Generate Key</small>
+    <input type="text" id="subdlKeyInput" placeholder="Dán SubDL API Key tại đây...">
+  </div>
+  <div class="api-group">
+    <label>2. OpenSubtitles.com API Key (Khuyên dùng)</label>
+    <small>Lấy tại opensubtitles.com → API → Consumers</small>
+    <input type="text" id="osKeyInput" placeholder="Dán OpenSubtitles API Key tại đây...">
+  </div>
+  <button class="btn-sm btn-sub" onclick="saveApiKeys()">💾 Lưu cấu hình</button>
+</div>
+
+<div class="search-wrap">
+  <input type="text" id="queryInput" placeholder="Nhập tên phim lẻ hoặc phim bộ..." onkeydown="if(event.key==='Enter') searchAll()">
+  <button onclick="searchAll()">Tìm</button>
+</div>
+
+<!-- Thanh chọn Phim lẻ / Phim bộ -->
+<div class="series-bar">
+  <div class="type-toggle">
+    <button class="type-btn active" id="btnTypeMovie" onclick="setMediaType('movie')">🎬 Phim lẻ</button>
+    <button class="type-btn" id="btnTypeTv" onclick="setMediaType('tv')">📺 Phim bộ (Series)</button>
+  </div>
+  <div class="ep-inputs" id="epInputs">
+    <span>Mùa (Season):</span>
+    <input type="number" id="seasonInput" value="1" min="1" max="99">
+    <span>Tập (Ep):</span>
+    <input type="number" id="episodeInput" value="1" min="1" max="999">
+    <button class="btn-sm btn-copy" onclick="searchAll()">Lọc tập</button>
+  </div>
+</div>
+
+<div id="movieList"></div>
+
+<!-- Tab chuyển đổi trên Mobile -->
+<div class="mobile-tabs">
+  <button class="mob-tab active" id="mobTabSub" onclick="switchMobileTab('sub')">🇻🇳 Phụ đề (<span id="mobSubCount">0</span>)</button>
+  <button class="mob-tab" id="mobTabTor" onclick="switchMobileTab('tor')">🧲 Torrent (<span id="mobTorCount">0</span>)</button>
+</div>
+
+<div id="matchBanner">
+  <span id="matchText">Đang khớp theo phụ đề đã chọn</span>
+  <button class="btn-sm btn-copy" onclick="clearSelection()">Bỏ lọc</button>
+</div>
+
+<div class="grid">
+  <!-- CỘT PHỤ ĐỀ -->
+  <div class="panel" id="panelSub">
+    <div class="panel-header">
+      <span class="panel-title">🇻🇳 Phụ đề Tiếng Việt (SubDL + OpenSubtitles)</span>
+      <span class="count-badge" id="subCount">0</span>
+    </div>
+    <div id="subContainer"><div class="status">Nhập tên phim để tìm phụ đề & torrent đồng thời</div></div>
+  </div>
+
+  <!-- CỘT TORRENT -->
+  <div class="panel mob-hidden" id="panelTor">
+    <div class="panel-header">
+      <span class="panel-title">🧲 Nguồn Torrent (≥ 720p • Xếp theo Seed)</span>
+      <span class="count-badge" id="torCount">0</span>
+    </div>
+
+    <!-- Bộ lọc Torrent -->
+    <div class="tor-filters">
+      <div class="filter-row">
+        <span class="filter-label">Định dạng:</span>
+        <button class="f-pill active" data-res="ALL" onclick="setFilterRes('ALL', this)">Tất cả</button>
+        <button class="f-pill" data-res="2160p" onclick="setFilterRes('2160p', this)">4K / 2160p</button>
+        <button class="f-pill" data-res="1080p" onclick="setFilterRes('1080p', this)">1080p</button>
+        <button class="f-pill" data-res="720p" onclick="setFilterRes('720p', this)">720p</button>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Dung lượng:</span>
+        <button class="f-pill active" data-size="ALL" onclick="setFilterSize('ALL', this)">Tất cả</button>
+        <button class="f-pill" data-size="GT20" onclick="setFilterSize('GT20', this)">&gt; 20 GB</button>
+        <button class="f-pill" data-size="10TO20" onclick="setFilterSize('10TO20', this)">10–20 GB</button>
+        <button class="f-pill" data-size="5TO10" onclick="setFilterSize('5TO10', this)">5–10 GB</button>
+        <button class="f-pill" data-size="LT5" onclick="setFilterSize('LT5', this)">&lt; 5 GB</button>
+      </div>
+      <div class="filter-row">
+        <span class="filter-label">Hiển thị:</span>
+        <button class="f-pill limit-pill active" data-lim="5" onclick="setLimitPerRes(5, this)">5 kết quả / định dạng</button>
+        <button class="f-pill limit-pill" data-lim="10" onclick="setLimitPerRes(10, this)">10 kết quả / định dạng</button>
+      </div>
+    </div>
+
+    <div id="torContainer"><div class="status">Danh sách magnet link (720p, 1080p, 4K) sẽ hiển thị tại đây</div></div>
+  </div>
+</div>
+
+<script>
+  let mediaType = 'movie';
+  let currentSubs = [];
+  let currentTorrents = [];
+  let selectedSubIndex = null;
+
+  let filterRes = 'ALL';
+  let filterSize = 'ALL';
+  let limitPerRes = 5;
+
+  window.onload = () => {
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    const osKey = localStorage.getItem('os_api_key');
+    if (subdlKey) document.getElementById('subdlKeyInput').value = subdlKey;
+    if (osKey) document.getElementById('osKeyInput').value = osKey;
+    if (!subdlKey) document.getElementById('apiBox').classList.add('show');
+  };
+
+  function toggleApiBox() {
+    document.getElementById('apiBox').classList.toggle('show');
+  }
+
+  function saveApiKeys() {
+    const subdlKey = document.getElementById('subdlKeyInput').value.trim();
+    const osKey = document.getElementById('osKeyInput').value.trim();
+    if (!subdlKey) return alert('Vui lòng nhập SubDL API Key!');
+    localStorage.setItem('subdl_api_key', subdlKey);
+    if (osKey) localStorage.setItem('os_api_key', osKey);
+    else localStorage.removeItem('os_api_key');
+    document.getElementById('apiBox').classList.remove('show');
+    alert('Đã lưu cấu hình API!');
+  }
+
+  function setMediaType(type) {
+    mediaType = type;
+    document.getElementById('btnTypeMovie').classList.toggle('active', type === 'movie');
+    document.getElementById('btnTypeTv').classList.toggle('active', type === 'tv');
+    document.getElementById('epInputs').classList.toggle('show', type === 'tv');
+  }
+
+  function switchMobileTab(tab) {
+    document.getElementById('mobTabSub').classList.toggle('active', tab === 'sub');
+    document.getElementById('mobTabTor').classList.toggle('active', tab === 'tor');
+    document.getElementById('panelSub').classList.toggle('mob-hidden', tab !== 'sub');
+    document.getElementById('panelTor').classList.toggle('mob-hidden', tab !== 'tor');
+  }
+
+  function setFilterRes(val, el) {
+    filterRes = val;
+    document.querySelectorAll('[data-res]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderTorrents();
+  }
+
+  function setFilterSize(val, el) {
+    filterSize = val;
+    document.querySelectorAll('[data-size]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderTorrents();
+  }
+
+  function setLimitPerRes(val, el) {
+    limitPerRes = val;
+    document.querySelectorAll('[data-lim]').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderTorrents();
+  }
+
+  function parseReleaseInfo(name) {
+    const upper = (name || '').toUpperCase();
+    const isCam = /\b(CAM|HDCAM|TS|HDTS|TELESYNC|TC|HDTC|PREDVD|SCR|DVDSCR|R5|480P|360P)\b/.test(upper);
+
+    let resolution = 'OTHER';
+    if (/\b(2160P|4K|UHD)\b/.test(upper)) resolution = '2160p';
+    else if (/\b1080P\b/.test(upper)) resolution = '1080p';
+    else if (/\b720P\b/.test(upper)) resolution = '720p';
+
+    let source = 'KHÁC';
+    if (/BLURAY|BLU-RAY|BDRIP|BRRIP|REMUX|BDREMUX/.test(upper)) source = 'BLURAY';
+    else if (/WEB-DL|WEBDL|WEBRIP|AMZN|NF\.|DSNP|ATVP|HMAX|WEB\b/.test(upper)) source = 'WEB-DL';
+    else if (isCam) source = 'CAM/RẠP';
+
+    let group = '';
+    const clean = (name || '').replace(/\.(srt|zip|mkv|mp4|avi|vi|vie)$/i, '');
+    const bracketMatch = clean.match(/\[([a-zA-Z0-9._-]+)\]$/);
+    const dashMatch = clean.match(/-([a-zA-Z0-9]+)$/);
+    if (bracketMatch) group = bracketMatch[1].toUpperCase();
+    else if (dashMatch && dashMatch[1].length >= 2 && dashMatch[1].length <= 15) group = dashMatch[1].toUpperCase();
+
+    return { source, group, resolution, isCam };
+  }
+
+  function parseSizeToGB(sizeStr) {
+    if (!sizeStr) return null;
+    const match = String(sizeStr).match(/([\d.]+)\s*(TB|GB|MB|GiB|MiB)/i);
+    if (!match) return null;
+    const val = parseFloat(match[1]);
+    const unit = match[2].toUpperCase();
+    if (unit.startsWith('T')) return val * 1024;
+    if (unit.startsWith('G')) return val;
+    if (unit.startsWith('M')) return val / 1024;
+    return null;
+  }
+
+  function formatBytesToGB(bytes) {
+    if (!bytes || isNaN(bytes)) return '?';
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb >= 1 ? `${gb.toFixed(2)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  }
+
+  async function searchAll() {
+    const query = document.getElementById('queryInput').value.trim();
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    if (!subdlKey) {
+      document.getElementById('apiBox').classList.add('show');
+      return alert('Bạn cần nhập SubDL API Key trước!');
+    }
+    if (!query) return;
+
+    selectedSubIndex = null;
+    document.getElementById('matchBanner').classList.remove('show');
+    document.getElementById('movieList').innerHTML = '';
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tìm phụ đề tiếng Việt...</div>';
+    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang quét nguồn torrent...</div>';
+
+    const season = parseInt(document.getElementById('seasonInput').value) || 1;
+    const episode = parseInt(document.getElementById('episodeInput').value) || 1;
+
+    try {
+      let subUrl = `https://api.subdl.com/api/v1/subtitles?api_key=${encodeURIComponent(subdlKey)}&film_name=${encodeURIComponent(query)}&languages=VI&subs_per_page=30`;
+      if (mediaType === 'tv') {
+        subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
+      }
+
+      const res = await fetch(subUrl);
+      const data = await res.json();
+      const results = data.results || [];
+
+      if (results.length > 0 && results[0].type === 'tv' && mediaType === 'movie') {
+        setMediaType('tv');
+      }
+
+      renderMovieChips(results, query);
+
+      let subdlList = (data.subtitles || []).map(s => {
+        const relName = s.release_name || s.name || 'Unknown';
+        const info = parseReleaseInfo(relName);
+        return {
+          provider: 'SubDL',
+          release: relName,
+          author: s.author || 'Ẩn danh',
+          downloadUrl: `https://dl.subdl.com${s.url}`,
+          imdbId: s.imdb_id || (results[0] && results[0].imdb_id) || null,
+          source: info.source,
+          group: info.group,
+          downloads: 0
+        };
+      });
+
+      const imdbId = subdlList.find(s => s.imdbId)?.imdbId || (results[0] && results[0].imdb_id) || null;
+      const osList = await fetchOpenSubtitles(query, imdbId, season, episode);
+
+      currentSubs = [...subdlList, ...osList];
+      renderSubtitles();
+      fetchTorrents(query, imdbId, season, episode);
+
+    } catch (err) {
+      document.getElementById('subContainer').innerHTML = `<div class="status">Lỗi tìm kiếm: ${err.message}</div>`;
+    }
+  }
+
+  async function fetchOpenSubtitles(query, imdbId, season, episode) {
+    let osSubs = [];
+    const osKey = localStorage.getItem('os_api_key');
+
+    if (osKey) {
+      try {
+        const cleanImdb = imdbId ? imdbId.replace(/^tt/, '') : '';
+        let endpoint = cleanImdb
+          ? `https://api.opensubtitles.com/api/v1/subtitles?imdb_id=${cleanImdb}&languages=vi`
+          : `https://api.opensubtitles.com/api/v1/subtitles?query=${encodeURIComponent(query)}&languages=vi`;
+
+        if (mediaType === 'tv') {
+          endpoint += `&season_number=${season}&episode_number=${episode}`;
+        }
+
+        const res = await fetch(endpoint, {
+          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v2.0' }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          (json.data || []).forEach(item => {
+            const attr = item.attributes || {};
+            const relName = attr.release || (attr.files && attr.files[0]?.file_name) || 'OpenSubtitles Release';
+            const fileId = attr.files && attr.files[0]?.file_id;
+            const info = parseReleaseInfo(relName);
+            osSubs.push({
+              provider: 'OpenSubtitles',
+              release: relName,
+              author: (attr.uploader && attr.uploader.name) || 'OS User',
+              downloadUrl: attr.url || `https://www.opensubtitles.com/vi/subtitles/${item.id}`,
+              osFileId: fileId,
+              imdbId: imdbId,
+              source: info.source,
+              group: info.group,
+              downloads: attr.download_count || 0
+            });
+          });
+        }
+      } catch (e) { console.log('OS Official error:', e); }
+    }
+
+    if (imdbId) {
+      try {
+        const stremioPath = mediaType === 'tv'
+          ? `series/${imdbId}:${season}:${episode}.json`
+          : `movie/${imdbId}.json`;
+        const v3Res = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${stremioPath}`);
+        if (v3Res.ok) {
+          const v3Data = await v3Res.json();
+          const viSubs = (v3Data.subtitles || []).filter(s => s.lang === 'vie' || s.lang === 'vi');
+          viSubs.forEach((s, i) => {
+            const titleGuess = s.title || `OpenSubtitles.VI.#${i + 1} (${imdbId})`;
+            const info = parseReleaseInfo(titleGuess);
+            osSubs.push({
+              provider: 'OpenSubtitles v3',
+              release: titleGuess,
+              author: 'OpenSubtitles DB',
+              downloadUrl: s.url,
+              imdbId: imdbId,
+              source: info.source,
+              group: info.group,
+              downloads: 0
+            });
+          });
+        }
+      } catch (e) { console.log('OS v3 error:', e); }
+    }
+
+    return osSubs;
+  }
+
+  async function downloadOsOfficial(fileId, fallbackUrl) {
+    const osKey = localStorage.getItem('os_api_key');
+    if (!osKey || !fileId) return window.open(fallbackUrl, '_blank');
+    try {
+      const res = await fetch('https://api.opensubtitles.com/api/v1/download', {
+        method: 'POST',
+        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v2.0' },
+        body: JSON.stringify({ file_id: fileId })
+      });
+      const data = await res.json();
+      if (data.link) window.open(data.link, '_blank');
+      else window.open(fallbackUrl, '_blank');
+    } catch (e) {
+      window.open(fallbackUrl, '_blank');
+    }
+  }
+
+  function renderMovieChips(results, query) {
+    const box = document.getElementById('movieList');
+    if (results.length <= 1) return;
+    box.innerHTML = results.slice(0, 8).map((m, idx) => `
+      <div class="movie-chip ${idx === 0 ? 'active' : ''}" onclick="selectMovieByImdb('${m.imdb_id}', '${(m.name || query).replace(/'/g, "\\'")}', '${m.type || 'movie'}', this)">
+        ${m.type === 'tv' ? '📺' : '🎬'} ${m.name} (${m.year || '?'})
+      </div>
+    `).join('');
+  }
+
+  async function selectMovieByImdb(imdbId, name, type, el) {
+    document.querySelectorAll('.movie-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    if (type === 'tv' || type === 'movie') setMediaType(type);
+
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    const season = parseInt(document.getElementById('seasonInput').value) || 1;
+    const episode = parseInt(document.getElementById('episodeInput').value) || 1;
+
+    selectedSubIndex = null;
+    document.getElementById('matchBanner').classList.remove('show');
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tải phụ đề...</div>';
+
+    let subUrl = `https://api.subdl.com/api/v1/subtitles?api_key=${encodeURIComponent(subdlKey)}&imdb_id=${imdbId}&languages=VI&subs_per_page=30`;
+    if (mediaType === 'tv') subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
+
+    const res = await fetch(subUrl);
+    const data = await res.json();
+    const subdlList = (data.subtitles || []).map(s => {
+      const relName = s.release_name || s.name || 'Unknown';
+      const info = parseReleaseInfo(relName);
+      return {
+        provider: 'SubDL',
+        release: relName,
+        author: s.author || 'Ẩn danh',
+        downloadUrl: `https://dl.subdl.com${s.url}`,
+        imdbId: imdbId,
+        source: info.source,
+        group: info.group,
+        downloads: 0
+      };
+    });
+
+    const osList = await fetchOpenSubtitles(name, imdbId, season, episode);
+    currentSubs = [...subdlList, ...osList];
+    renderSubtitles();
+    fetchTorrents(name, imdbId, season, episode);
+  }
+
+  async function fetchTorrents(query, imdbId, season, episode) {
+    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang quét YTS, Torrentio, Knaben...</div>';
+    const torMap = new Map();
+
+    const sPad = String(season).padStart(2, '0');
+    const ePad = String(episode).padStart(2, '0');
+    const searchQuery = mediaType === 'tv' ? `${query} S${sPad}E${ePad}` : query;
+
+    function addTorrent(item) {
+      if (!item.hash) return;
+      const hash = item.hash.toLowerCase();
+      const info = parseReleaseInfo(item.title);
+
+      if (info.isCam || info.resolution === 'OTHER') return;
+
+      const sizeGB = parseSizeToGB(item.size);
+      const existing = torMap.get(hash);
+      if (!existing || (item.seeds || 0) > existing.seeds) {
+        torMap.set(hash, {
+          hash,
+          title: item.title,
+          size: item.size || '?',
+          sizeGB: sizeGB,
+          seeds: item.seeds || 0,
+          tracker: item.tracker,
+          magnet: item.magnet,
+          source: info.source,
+          group: info.group || existing?.group || '',
+          resolution: info.resolution
+        });
+      }
+    }
+
+    const tasks = [];
+
+    if (mediaType === 'movie') {
+      tasks.push((async () => {
+        try {
+          const ytsParam = imdbId ? `query_term=${encodeURIComponent(imdbId)}` : `query_term=${encodeURIComponent(query)}`;
+          const res = await fetch(`https://yts.mx/api/v2/list_movies.json?${ytsParam}`);
+          const data = await res.json();
+          (data?.data?.movies || []).forEach(m => {
+            (m.torrents || []).forEach(t => {
+              const fullTitle = `${m.title_english || m.title} (${m.year}) ${t.quality} ${t.type.toUpperCase()} [YTS.MX]`;
+              const trackers = [
+                'udp://tracker.opentrackr.org:1337/announce',
+                'udp://open.stealth.si:80/announce',
+                'udp://tracker.torrent.eu.org:451/announce'
+              ].map(tr => `&tr=${encodeURIComponent(tr)}`).join('');
+              addTorrent({
+                hash: t.hash,
+                title: fullTitle,
+                size: t.size,
+                seeds: t.seeds,
+                tracker: 'YTS',
+                magnet: `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(fullTitle)}${trackers}`
+              });
+            });
+          });
+        } catch (e) {}
+      })());
+    }
+
+    if (imdbId) {
+      tasks.push((async () => {
+        try {
+          const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+          const res = await fetch(`https://torrentio.strem.fun/stream/${path}`);
+          const data = await res.json();
+          (data.streams || []).forEach(st => {
+            const lines = (st.title || '').split('\n');
+            const fileName = lines[0] || 'Unknown';
+            const metaLine = lines[1] || '';
+            const seedMatch = metaLine.match(/👤\s*(\d+)/);
+            const sizeMatch = metaLine.match(/💾\s*([^⚙️]+)/);
+            addTorrent({
+              hash: st.infoHash,
+              title: fileName,
+              size: sizeMatch ? sizeMatch[1].trim() : '?',
+              seeds: seedMatch ? parseInt(seedMatch[1]) : 0,
+              tracker: (st.name || '').replace('Torrentio\n', '').trim() || 'Torrentio',
+              magnet: `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(fileName)}`
+            });
+          });
+        } catch (e) {}
+      })());
+
+      tasks.push((async () => {
+        try {
+          const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
+          const res = await fetch(`https://mediafusion.elfhosted.com/stream/${path}`);
+          const data = await res.json();
+          (data.streams || []).forEach(st => {
+            if (!st.infoHash) return;
+            const lines = (st.title || '').split('\n');
+            const fileName = lines[0] || 'Unknown';
+            const metaLine = lines.join(' ');
+            const seedMatch = metaLine.match(/👤\s*(\d+)/);
+            const sizeMatch = metaLine.match(/💾\s*([\d.]+\s*[GM]B)/i);
+            addTorrent({
+              hash: st.infoHash,
+              title: fileName,
+              size: sizeMatch ? sizeMatch[1].trim() : '?',
+              seeds: seedMatch ? parseInt(seedMatch[1]) : 0,
+              tracker: 'MediaFusion',
+              magnet: `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(fileName)}`
+            });
+          });
+        } catch (e) {}
+      })());
+    }
+
+    tasks.push((async () => {
+      try {
+        const res = await fetch('https://api.knaben.org/v1', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            search_type: '100%',
+            search_field: 'title',
+            query: searchQuery,
+            order_by: 'seeders',
+            order_direction: 'desc',
+            size: 60
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          (data.hits || []).forEach(h => {
+            if (!h.hash) return;
+            addTorrent({
+              hash: h.hash,
+              title: h.title,
+              size: formatBytesToGB(h.bytes),
+              seeds: h.seeders || 0,
+              tracker: h.tracker || 'Knaben',
+              magnet: h.magnetUrl || `magnet:?xt=urn:btih:${h.hash}&dn=${encodeURIComponent(h.title)}`
+            });
+          });
+        }
+      } catch (e) {}
+    })());
+
+    await Promise.allSettled(tasks);
+    currentTorrents = Array.from(torMap.values());
+    renderTorrents();
+  }
+
+  function renderSubtitles() {
+    const box = document.getElementById('subContainer');
+    document.getElementById('subCount').innerText = currentSubs.length;
+    document.getElementById('mobSubCount').innerText = currentSubs.length;
+
+    if (currentSubs.length === 0) {
+      box.innerHTML = '<div class="status">Không tìm thấy phụ đề tiếng Việt.</div>';
+      return;
+    }
+
+    box.innerHTML = currentSubs.map((s, idx) => {
+      const isOs = s.provider.startsWith('OpenSubtitles');
+      const dlBtn = s.osFileId
+        ? `<button class="btn-sm btn-os" onclick="downloadOsOfficial(${s.osFileId}, '${s.downloadUrl}')">⬇️ Tải Sub (OS)</button>`
+        : `<a class="btn-sm ${isOs ? 'btn-os' : 'btn-sub'}" href="${s.downloadUrl}" target="_blank">⬇️ Tải Sub</a>`;
+
+      return `
+        <div class="item ${selectedSubIndex === idx ? 'selected' : ''}" onclick="selectSubtitle(${idx})">
+          <div class="item-title">${s.release}</div>
+          <div class="tags">
+            <span class="tag ${isOs ? 'provider-os' : 'provider-subdl'}">${s.provider}</span>
+            <span class="tag src">${s.source}</span>
+            ${s.group ? `<span class="tag grp">Nhóm: ${s.group}</span>` : ''}
+            ${s.downloads > 0 ? `<span class="tag">⬇️ ${s.downloads}</span>` : ''}
+            <span class="tag">Dịch: ${s.author}</span>
+          </div>
+          <div class="actions" onclick="event.stopPropagation()">
+            ${dlBtn}
+            <button class="btn-sm btn-copy" onclick="selectSubtitle(${idx}, true)">🎯 Tìm Torrent khớp</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function selectSubtitle(idx, autoSwitchMobile = false) {
+    selectedSubIndex = idx;
+    const sub = currentSubs[idx];
+    document.getElementById('matchText').innerText = `Khớp với: ${sub.source} ${sub.group ? '• Nhóm ' + sub.group : ''}`;
+    document.getElementById('matchBanner').classList.add('show');
+    renderSubtitles();
+    renderTorrents();
+
+    if (autoSwitchMobile && window.innerWidth < 768) {
+      switchMobileTab('tor');
+    }
+  }
+
+  function clearSelection() {
+    selectedSubIndex = null;
+    document.getElementById('matchBanner').classList.remove('show');
+    renderSubtitles();
+    renderTorrents();
+  }
+
+  function renderTorrents() {
+    const box = document.getElementById('torContainer');
+    const selectedSub = selectedSubIndex !== null ? currentSubs[selectedSubIndex] : null;
+
+    let filtered = currentTorrents.filter(t => {
+      if (filterRes !== 'ALL' && t.resolution !== filterRes) return false;
+      if (filterSize !== 'ALL') {
+        if (t.sizeGB === null) return false;
+        if (filterSize === 'GT20' && !(t.sizeGB > 20)) return false;
+        if (filterSize === '10TO20' && !(t.sizeGB >= 10 && t.sizeGB <= 20)) return false;
+        if (filterSize === '5TO10' && !(t.sizeGB >= 5 && t.sizeGB < 10)) return false;
+        if (filterSize === 'LT5' && !(t.sizeGB < 5)) return false;
+      }
+      return true;
+    });
+
+    const scored = filtered.map(t => {
+      let matchType = 'none';
+      let score = 0;
+      if (selectedSub) {
+        const sameGroup = selectedSub.group && t.group && (t.group.includes(selectedSub.group) || selectedSub.group.includes(t.group));
+        const sameSource = selectedSub.source !== 'KHÁC' && selectedSub.source === t.source;
+        if (sameGroup) { matchType = 'exact'; score = 100; }
+        else if (sameSource) { matchType = 'source'; score = 50; }
+      }
+      return { ...t, matchType, score };
+    });
+
+    const resOrder = ['2160p', '1080p', '720p'];
+    const resLabels = {
+      '2160p': '🎬 4K / 2160p (Ultra HD)',
+      '1080p': '📺 1080p (Full HD)',
+      '720p': '📱 720p (HD)'
+    };
+
+    let finalHtml = '';
+    let totalShown = 0;
+
+    resOrder.forEach(resKey => {
+      if (filterRes !== 'ALL' && filterRes !== resKey) return;
+      const groupItems = scored
+        .filter(t => t.resolution === resKey)
+        .sort((a, b) => (b.score - a.score) || (b.seeds - a.seeds));
+
+      if (groupItems.length === 0) return;
+
+      const sliced = groupItems.slice(0, limitPerRes);
+      totalShown += sliced.length;
+
+      finalHtml += `<div class="res-header"><span>${resLabels[resKey]}</span><span>Hiển thị ${sliced.length}/${groupItems.length} bản</span></div>`;
+      finalHtml += sliced.map(t => `
+        <div class="item ${t.matchType === 'exact' ? 'match-exact' : (t.matchType === 'source' ? 'match-source' : '')}">
+          <div class="item-title">${t.title}</div>
+          <div class="tags">
+            ${t.matchType === 'exact' ? `<span class="tag exact">✓ KHỚP NHÓM 100%</span>` : ''}
+            ${t.matchType === 'source' ? `<span class="tag partial">≈ KHỚP NGUỒN (${t.source})</span>` : ''}
+            <span class="tag res">${t.resolution}</span>
+            <span class="tag src">${t.source}</span>
+            ${t.group ? `<span class="tag grp">${t.group}</span>` : ''}
+            <span class="tag">💾 ${t.size}</span>
+            <span class="tag seed">▲ ${t.seeds} Seeds</span>
+            <span class="tag">${t.tracker}</span>
+          </div>
+          <div class="actions">
+            <a class="btn-sm btn-mag" href="${t.magnet}">🧲 Tải Torrent</a>
+            <button class="btn-sm btn-copy" onclick="copyMagnet('${t.magnet.replace(/'/g, "\\'")}')">📋 Copy Magnet</button>
+          </div>
+        </div>
+      `).join('');
+    });
+
+    document.getElementById('torCount').innerText = totalShown;
+    document.getElementById('mobTorCount').innerText = totalShown;
+
+    if (totalShown === 0) {
+      box.innerHTML = '<div class="status">Không có bản torrent nào khớp với bộ lọc hiện tại (≥ 720p).</div>';
+    } else {
+      box.innerHTML = finalHtml;
+    }
+  }
+
+  function copyMagnet(link) {
+    navigator.clipboard.writeText(link);
+    alert('Đã copy Magnet Link!');
+  }
+</script>
+</body>
+</html>
