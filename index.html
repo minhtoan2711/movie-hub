@@ -60,9 +60,16 @@
   @media (min-width: 768px) { .mobile-tabs { display: none; } }
 
   /* Filter Banner */
-  #matchBanner { background: rgba(16, 185, 129, 0.18); border: 1px solid var(--green); color: #a7f3d0; padding: 9px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; display: none; justify-content: space-between; align-items: center; gap: 8px; }
+  #matchBanner { background: rgba(16, 185, 129, 0.16); border: 1px solid var(--green); color: #a7f3d0; padding: 9px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 10px; display: none; flex-direction: column; gap: 8px; }
   #matchBanner.show { display: flex; }
+  .banner-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   #matchText { line-height: 1.4; word-break: break-word; }
+
+  /* Quick External Search Bar */
+  .quick-ext { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px dashed rgba(16, 185, 129, 0.4); }
+  .quick-ext span { font-size: 11px; color: #6ee7b7; font-weight: 600; }
+  .ext-link { font-size: 11px; padding: 4px 8px; border-radius: 5px; background: var(--bg); color: var(--text); border: 1px solid var(--border); text-decoration: none; font-weight: 600; }
+  .ext-link:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Grid Layout */
   .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
@@ -124,12 +131,12 @@
 
 <div id="apiBox">
   <div class="api-group">
-    <label>1. SubDL API Key (Bắt buộc để hiện tên bản release chi tiết)</label>
+    <label>1. SubDL API Key</label>
     <small>Lấy miễn phí tại subdl.com → Tài khoản → API → Generate Key</small>
     <input type="text" id="subdlKeyInput" placeholder="Dán SubDL API Key tại đây...">
   </div>
   <div class="api-group">
-    <label>2. OpenSubtitles.com API Key (Khuyên dùng)</label>
+    <label>2. OpenSubtitles.com API Key</label>
     <small>Lấy tại opensubtitles.com → API → Consumers</small>
     <input type="text" id="osKeyInput" placeholder="Dán OpenSubtitles API Key tại đây...">
   </div>
@@ -165,8 +172,11 @@
 </div>
 
 <div id="matchBanner">
-  <span id="matchText">Đang khớp theo phụ đề đã chọn</span>
-  <button class="btn-sm btn-copy" onclick="clearSelection()">Bỏ lọc</button>
+  <div class="banner-top">
+    <span id="matchText">Đang khớp theo phụ đề đã chọn</span>
+    <button class="btn-sm btn-copy" onclick="clearSelection()">Bỏ lọc</button>
+  </div>
+  <div class="quick-ext" id="quickExtLinks"></div>
 </div>
 
 <div class="grid">
@@ -182,7 +192,7 @@
   <!-- CỘT TORRENT -->
   <div class="panel mob-hidden" id="panelTor">
     <div class="panel-header">
-      <span class="panel-title">🧲 Nguồn Torrent (≥ 720p • Xếp theo Seed)</span>
+      <span class="panel-title">🧲 Nguồn Torrent (Torrentio + TorrentsDB • ≥ 720p)</span>
       <span class="count-badge" id="torCount">0</span>
     </div>
 
@@ -225,6 +235,39 @@
   let filterRes = 'ALL';
   let filterSize = 'ALL';
   let limitPerRes = 5;
+
+  const PUBLIC_TRACKERS = [
+    'udp://tracker.opentrackr.org:1337/announce',
+    'udp://open.stealth.si:80/announce',
+    'udp://tracker.torrent.eu.org:451/announce',
+    'udp://tracker.bittor.pw:1337/announce',
+    'udp://public.popcorn-tracker.org:6969/announce',
+    'udp://tracker.dler.org:6969/announce',
+    'udp://exodus.desync.com:6969/announce',
+    'udp://open.demonii.com:1337/announce',
+    'udp://tracker.openbittorrent.com:6969/announce',
+    'udp://tracker.moeking.me:6969/announce',
+    'http://tracker.opentrackr.org:1337/announce',
+    'wss://tracker.openwebtorrent.com'
+  ];
+
+  function buildMagnetWithTrackers(hash, title, rawSources = []) {
+    const cleanHash = (hash || '').trim().toLowerCase();
+    const dn = encodeURIComponent(title || cleanHash);
+    const extraTrackers = [];
+
+    if (Array.isArray(rawSources)) {
+      rawSources.forEach(s => {
+        if (typeof s === 'string' && s.startsWith('tracker:')) {
+          extraTrackers.push(s.replace(/^tracker:/, ''));
+        }
+      });
+    }
+
+    const mergedTrackers = Array.from(new Set([...extraTrackers, ...PUBLIC_TRACKERS]));
+    const trParams = mergedTrackers.map(tr => `&tr=${encodeURIComponent(tr)}`).join('');
+    return `magnet:?xt=urn:btih:${cleanHash}&dn=${dn}${trParams}`;
+  }
 
   window.onload = () => {
     const subdlKey = localStorage.getItem('subdl_api_key');
@@ -290,31 +333,6 @@
     renderTorrents();
   }
 
-  // Hàm fetch đa tầng proxy cho GET request (vượt chặn CORS trên GitHub Pages & Mobile)
-  async function fetchJsonWithProxy(url) {
-    const proxies = [
-      url,
-      `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-    ];
-    for (const target of proxies) {
-      try {
-        const res = await fetch(target);
-        if (res.ok) return await res.json();
-      } catch (e) {}
-    }
-    throw new Error('Không thể kết nối API');
-  }
-
-  // Hàm fetch với custom headers (dùng cho OpenSubtitles.com API)
-  async function fetchWithHeadersProxy(url, options = {}) {
-    try {
-      const res = await fetch(url, options);
-      if (res.ok) return res;
-    } catch (e) {}
-    return await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, options);
-  }
-
   function parseReleaseInfo(name) {
     const upper = (name || '').toUpperCase();
     const isCam = /\b(CAM|HDCAM|TS|HDTS|TELESYNC|TC|HDTC|PREDVD|SCR|DVDSCR|R5|480P|360P)\b/.test(upper);
@@ -351,12 +369,7 @@
     return null;
   }
 
-  function formatBytesToGB(bytes) {
-    if (!bytes || isNaN(bytes)) return '?';
-    const gb = bytes / (1024 * 1024 * 1024);
-    return gb >= 1 ? `${gb.toFixed(2)} GB` : `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  }
-
+  // 1. Nhận diện phim & lấy IMDb ID từ Cinemeta
   async function searchAll() {
     const query = document.getElementById('queryInput').value.trim();
     if (!query) return;
@@ -364,8 +377,8 @@
     selectedSubIndex = null;
     document.getElementById('matchBanner').classList.remove('show');
     document.getElementById('movieList').innerHTML = '';
-    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang nhận diện phim & tìm phụ đề...</div>';
-    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang chuẩn bị quét nguồn torrent...</div>';
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tìm thông tin phim & phụ đề...</div>';
+    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang quét Torrentio & TorrentsDB...</div>';
 
     try {
       const catalogType = mediaType === 'tv' ? 'series' : 'movie';
@@ -419,7 +432,7 @@
     currentTitle = title;
     selectedSubIndex = null;
     document.getElementById('matchBanner').classList.remove('show');
-    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang quét SubDL & OpenSubtitles...</div>';
+    document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tải phụ đề từ SubDL & OpenSubtitles...</div>';
 
     const season = parseInt(document.getElementById('seasonInput').value) || 1;
     const episode = parseInt(document.getElementById('episodeInput').value) || 1;
@@ -427,20 +440,14 @@
     const [subdlList, osList] = await Promise.all([
       fetchSubDL(title, imdbId, season, episode),
       fetchOpenSubtitles(title, imdbId, season, episode),
-      fetchTorrents(title, imdbId, season, episode)
+      fetchStremioTorrents(imdbId, season, episode)
     ]);
 
-    let combined = [...subdlList, ...osList];
-    // Nếu đã có kết quả chi tiết từ SubDL hoặc OpenSubtitles chính thức, ẩn các dòng tên giả của OS v3
-    const hasRealNames = combined.some(s => !s.isPlaceholder);
-    if (hasRealNames) {
-      combined = combined.filter(s => !s.isPlaceholder);
-    }
-
-    currentSubs = combined;
+    currentSubs = [...subdlList, ...osList];
     renderSubtitles();
   }
 
+  // 2. SubDL REST API
   async function fetchSubDL(query, imdbId, season, episode) {
     const subdlKey = localStorage.getItem('subdl_api_key');
     if (!subdlKey) return [];
@@ -453,7 +460,9 @@
         subUrl += `&type=tv&season_number=${season}&episode_number=${episode}`;
       }
 
-      const data = await fetchJsonWithProxy(subUrl);
+      const res = await fetch(subUrl);
+      if (!res.ok) return [];
+      const data = await res.json();
       return (data.subtitles || []).map(s => {
         const relName = s.release_name || s.name || 'SubDL Release';
         const info = parseReleaseInfo(relName);
@@ -465,97 +474,62 @@
           source: info.source,
           group: info.group,
           resolution: info.resolution,
-          downloads: 0,
-          isPlaceholder: false
+          downloads: 0
         };
       });
     } catch (e) {
-      console.log('SubDL error:', e);
       return [];
     }
   }
 
+  // 3. OpenSubtitles REST API
   async function fetchOpenSubtitles(query, imdbId, season, episode) {
-    let osSubs = [];
     const osKey = localStorage.getItem('os_api_key');
+    if (!osKey) return [];
+    try {
+      const cleanImdb = imdbId ? imdbId.replace(/^tt/, '') : '';
+      let endpoint = cleanImdb
+        ? `https://api.opensubtitles.com/api/v1/subtitles?imdb_id=${cleanImdb}&languages=vi`
+        : `https://api.opensubtitles.com/api/v1/subtitles?query=${encodeURIComponent(query)}&languages=vi`;
 
-    if (osKey) {
-      try {
-        const cleanImdb = imdbId ? imdbId.replace(/^tt/, '') : '';
-        let endpoint = cleanImdb
-          ? `https://api.opensubtitles.com/api/v1/subtitles?imdb_id=${cleanImdb}&languages=vi`
-          : `https://api.opensubtitles.com/api/v1/subtitles?query=${encodeURIComponent(query)}&languages=vi`;
+      if (mediaType === 'tv') {
+        endpoint += `&season_number=${season}&episode_number=${episode}`;
+      }
 
-        if (mediaType === 'tv') {
-          endpoint += `&season_number=${season}&episode_number=${episode}`;
-        }
-
-        const res = await fetchWithHeadersProxy(endpoint, {
-          headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub v3.1' }
-        });
-        if (res.ok) {
-          const json = await res.json();
-          (json.data || []).forEach(item => {
-            const attr = item.attributes || {};
-            const relName = attr.release || (attr.files && attr.files[0]?.file_name) || 'OpenSubtitles Release';
-            const fileId = attr.files && attr.files[0]?.file_id;
-            const info = parseReleaseInfo(relName);
-            osSubs.push({
-              provider: 'OpenSubtitles',
-              release: relName,
-              author: (attr.uploader && attr.uploader.name) || 'OS User',
-              downloadUrl: attr.url || `https://www.opensubtitles.com/vi/subtitles/${item.id}`,
-              osFileId: fileId,
-              source: info.source,
-              group: info.group,
-              resolution: info.resolution,
-              downloads: attr.download_count || 0,
-              isPlaceholder: false
-            });
-          });
-        }
-      } catch (e) { console.log('OS Official error:', e); }
+      const res = await fetch(endpoint, {
+        headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub StremioEdition v5.0' }
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.data || []).map(item => {
+        const attr = item.attributes || {};
+        const relName = attr.release || (attr.files && attr.files[0]?.file_name) || 'OpenSubtitles Release';
+        const fileId = attr.files && attr.files[0]?.file_id;
+        const info = parseReleaseInfo(relName);
+        return {
+          provider: 'OpenSubtitles',
+          release: relName,
+          author: (attr.uploader && attr.uploader.name) || 'OS User',
+          downloadUrl: attr.url || `https://www.opensubtitles.com/vi/subtitles/${item.id}`,
+          osFileId: fileId,
+          source: info.source,
+          group: info.group,
+          resolution: info.resolution,
+          downloads: attr.download_count || 0
+        };
+      });
+    } catch (e) {
+      return [];
     }
-
-    if (imdbId) {
-      try {
-        const stremioPath = mediaType === 'tv'
-          ? `series/${imdbId}:${season}:${episode}.json`
-          : `movie/${imdbId}.json`;
-        const v3Res = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${stremioPath}`);
-        if (v3Res.ok) {
-          const v3Data = await v3Res.json();
-          const viSubs = (v3Data.subtitles || []).filter(s => s.lang === 'vie' || s.lang === 'vi');
-          viSubs.forEach((s, i) => {
-            const hasRealTitle = Boolean(s.title && s.title.trim());
-            const titleGuess = hasRealTitle ? s.title : `Bản dịch Tiếng Việt #${i + 1} (Chưa nhập API Key nên ẩn tên file)`;
-            const info = parseReleaseInfo(titleGuess);
-            osSubs.push({
-              provider: 'OpenSubtitles v3',
-              release: titleGuess,
-              author: 'OpenSubtitles DB',
-              downloadUrl: s.url,
-              source: info.source,
-              group: info.group,
-              resolution: info.resolution,
-              downloads: 0,
-              isPlaceholder: !hasRealTitle
-            });
-          });
-        }
-      } catch (e) { console.log('OS v3 error:', e); }
-    }
-
-    return osSubs;
   }
 
   async function downloadOsOfficial(fileId, fallbackUrl) {
     const osKey = localStorage.getItem('os_api_key');
     if (!osKey || !fileId) return window.open(fallbackUrl, '_blank');
     try {
-      const res = await fetchWithHeadersProxy('https://api.opensubtitles.com/api/v1/download', {
+      const res = await fetch('https://api.opensubtitles.com/api/v1/download', {
         method: 'POST',
-        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub v3.1' },
+        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub StremioEdition v5.0' },
         body: JSON.stringify({ file_id: fileId })
       });
       const data = await res.json();
@@ -566,155 +540,83 @@
     }
   }
 
-  async function fetchTorrents(query, imdbId, season, episode) {
-    document.getElementById('torContainer').innerHTML = '<div class="status">⏳ Đang quét YTS, Torrentio, Knaben...</div>';
+  // Bộ đọc tổng quát cho Stremio Addon Stream (hỗ trợ cả Torrentio & TorrentsDB)
+  function parseStremioStream(st, addonLabel) {
+    if (!st || !st.infoHash) return null;
+    const rawTitle = st.title || st.description || '';
+    const rawName = st.name || '';
+    const combinedText = `${rawName}\n${rawTitle}`;
+
+    const lines = rawTitle.split('\n').map(l => l.trim()).filter(Boolean);
+    const fileName = lines[0] || rawName.replace(/\n/g, ' ') || 'Unknown Release';
+
+    const info = parseReleaseInfo(`${fileName} ${rawName}`);
+    if (info.isCam || info.resolution === 'OTHER') return null;
+
+    // Trích xuất số lượng Seed (hỗ trợ nhiều kiểu ký tự của Torrentio & TorrentsDB)
+    const seedMatch = combinedText.match(/(?:👤|👥|Seeds?:?)\s*(\d+)/i);
+    const seeds = seedMatch ? parseInt(seedMatch[1]) : 0;
+
+    // Trích xuất dung lượng file (GB / MB / TB)
+    const sizeMatch = combinedText.match(/(?:💾|📦|Size:?)\s*([\d.]+\s*(?:TB|GB|MB|GiB|MiB))/i)
+                   || combinedText.match(/([\d.]+\s*(?:TB|GB|MB|GiB|MiB))/i);
+    const sizeStr = sizeMatch ? sizeMatch[1].trim() : '?';
+
+    // Trích xuất tên tracker nguồn (nếu có sau biểu tượng ⚙️ hoặc cuối dòng)
+    const trackerMatch = combinedText.match(/(?:⚙️|🔎)\s*([^\n⚙️]+)/);
+    const subTracker = trackerMatch ? trackerMatch[1].trim() : '';
+
+    return {
+      hash: st.infoHash.toLowerCase(),
+      title: fileName,
+      size: sizeStr,
+      sizeGB: parseSizeToGB(sizeStr),
+      seeds: seeds,
+      tracker: subTracker ? `${addonLabel} (${subTracker})` : addonLabel,
+      magnet: buildMagnetWithTrackers(st.infoHash, fileName, st.sources),
+      source: info.source,
+      group: info.group,
+      resolution: info.resolution
+    };
+  }
+
+  // 4. Gọi song song 2 Stremio Addons chuẩn CORS: Torrentio + TorrentsDB
+  async function fetchStremioTorrents(imdbId, season, episode) {
+    const box = document.getElementById('torContainer');
+    if (!imdbId) {
+      currentTorrents = [];
+      renderTorrents();
+      return;
+    }
+
+    box.innerHTML = '<div class="status">⏳ Đang quét Torrentio & TorrentsDB...</div>';
     const torMap = new Map();
+    const streamPath = mediaType === 'tv'
+      ? `series/${imdbId}:${season}:${episode}.json`
+      : `movie/${imdbId}.json`;
 
-    const sPad = String(season).padStart(2, '0');
-    const ePad = String(episode).padStart(2, '0');
-    const searchQuery = mediaType === 'tv' ? `${query} S${sPad}E${ePad}` : query;
+    const addons = [
+      { label: 'Torrentio', url: `https://torrentio.strem.fun/stream/${streamPath}` },
+      { label: 'TorrentsDB', url: `https://torrentsdb.com/stream/${streamPath}` }
+    ];
 
-    function addTorrent(item) {
-      if (!item.hash) return;
-      const hash = item.hash.toLowerCase();
-      const info = parseReleaseInfo(item.title);
-      if (info.isCam || info.resolution === 'OTHER') return;
-
-      const sizeGB = parseSizeToGB(item.size);
-      const existing = torMap.get(hash);
-      if (!existing || (item.seeds || 0) > existing.seeds) {
-        torMap.set(hash, {
-          hash,
-          title: item.title,
-          size: item.size || '?',
-          sizeGB: sizeGB,
-          seeds: item.seeds || 0,
-          tracker: item.tracker,
-          magnet: item.magnet,
-          source: info.source,
-          group: info.group || existing?.group || '',
-          resolution: info.resolution
-        });
-      }
-    }
-
-    const tasks = [];
-
-    if (mediaType === 'movie') {
-      tasks.push((async () => {
-        const domains = ['https://yts.mx', 'https://yts.lt'];
-        for (const domain of domains) {
-          try {
-            const ytsParam = imdbId ? `query_term=${encodeURIComponent(imdbId)}` : `query_term=${encodeURIComponent(query)}`;
-            const res = await fetch(`${domain}/api/v2/list_movies.json?${ytsParam}`);
-            if (!res.ok) continue;
-            const data = await res.json();
-            const movies = data?.data?.movies || [];
-            if (movies.length > 0) {
-              movies.forEach(m => {
-                (m.torrents || []).forEach(t => {
-                  const fullTitle = `${m.title_english || m.title} (${m.year}) ${t.quality} ${t.type.toUpperCase()} [YTS.MX]`;
-                  const trackers = [
-                    'udp://tracker.opentrackr.org:1337/announce',
-                    'udp://open.stealth.si:80/announce',
-                    'udp://tracker.torrent.eu.org:451/announce'
-                  ].map(tr => `&tr=${encodeURIComponent(tr)}`).join('');
-                  addTorrent({
-                    hash: t.hash,
-                    title: fullTitle,
-                    size: t.size,
-                    seeds: t.seeds,
-                    tracker: 'YTS',
-                    magnet: `magnet:?xt=urn:btih:${t.hash}&dn=${encodeURIComponent(fullTitle)}${trackers}`
-                  });
-                });
-              });
-              break;
-            }
-          } catch (e) {}
-        }
-      })());
-    }
-
-    if (imdbId) {
-      tasks.push((async () => {
-        try {
-          const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
-          const res = await fetch(`https://torrentio.strem.fun/stream/${path}`);
-          const data = await res.json();
-          (data.streams || []).forEach(st => {
-            const lines = (st.title || '').split('\n');
-            const fileName = lines[0] || 'Unknown';
-            const metaLine = lines[1] || '';
-            const seedMatch = metaLine.match(/👤\s*(\d+)/);
-            const sizeMatch = metaLine.match(/💾\s*([^⚙️]+)/);
-            addTorrent({
-              hash: st.infoHash,
-              title: fileName,
-              size: sizeMatch ? sizeMatch[1].trim() : '?',
-              seeds: seedMatch ? parseInt(seedMatch[1]) : 0,
-              tracker: (st.name || '').replace('Torrentio\n', '').trim() || 'Torrentio',
-              magnet: `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(fileName)}`
-            });
-          });
-        } catch (e) {}
-      })());
-
-      tasks.push((async () => {
-        try {
-          const path = mediaType === 'tv' ? `series/${imdbId}:${season}:${episode}.json` : `movie/${imdbId}.json`;
-          const res = await fetch(`https://mediafusion.elfhosted.com/stream/${path}`);
-          const data = await res.json();
-          (data.streams || []).forEach(st => {
-            if (!st.infoHash) return;
-            const lines = (st.title || '').split('\n');
-            const fileName = lines[0] || 'Unknown';
-            const metaLine = lines.join(' ');
-            const seedMatch = metaLine.match(/👤\s*(\d+)/);
-            const sizeMatch = metaLine.match(/💾\s*([\d.]+\s*[GM]B)/i);
-            addTorrent({
-              hash: st.infoHash,
-              title: fileName,
-              size: sizeMatch ? sizeMatch[1].trim() : '?',
-              seeds: seedMatch ? parseInt(seedMatch[1]) : 0,
-              tracker: 'MediaFusion',
-              magnet: `magnet:?xt=urn:btih:${st.infoHash}&dn=${encodeURIComponent(fileName)}`
-            });
-          });
-        } catch (e) {}
-      })());
-    }
-
-    tasks.push((async () => {
+    const tasks = addons.map(async addon => {
       try {
-        const res = await fetch('https://api.knaben.org/v1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            search_type: '100%',
-            search_field: 'title',
-            query: searchQuery,
-            order_by: 'seeders',
-            order_direction: 'desc',
-            size: 60
-          })
+        const res = await fetch(addon.url);
+        if (!res.ok) return;
+        const data = await res.json();
+        (data.streams || []).forEach(st => {
+          const parsed = parseStremioStream(st, addon.label);
+          if (!parsed) return;
+          const existing = torMap.get(parsed.hash);
+          if (!existing || parsed.seeds > existing.seeds) {
+            torMap.set(parsed.hash, parsed);
+          }
         });
-        if (res.ok) {
-          const data = await res.json();
-          (data.hits || []).forEach(h => {
-            if (!h.hash) return;
-            addTorrent({
-              hash: h.hash,
-              title: h.title,
-              size: formatBytesToGB(h.bytes),
-              seeds: h.seeders || 0,
-              tracker: h.tracker || 'Knaben',
-              magnet: h.magnetUrl || `magnet:?xt=urn:btih:${h.hash}&dn=${encodeURIComponent(h.title)}`
-            });
-          });
-        }
-      } catch (e) {}
-    })());
+      } catch (e) {
+        console.log(`${addon.label} error:`, e);
+      }
+    });
 
     await Promise.allSettled(tasks);
     currentTorrents = Array.from(torMap.values());
@@ -726,22 +628,21 @@
     document.getElementById('subCount').innerText = currentSubs.length;
     document.getElementById('mobSubCount').innerText = currentSubs.length;
 
-    if (currentSubs.length === 0) {
-      box.innerHTML = '<div class="status">Không tìm thấy phụ đề tiếng Việt cho phim này.</div>';
+    const subdlKey = localStorage.getItem('subdl_api_key');
+    const osKey = localStorage.getItem('os_api_key');
+
+    if (!subdlKey && !osKey) {
+      box.innerHTML = `<div class="status">⚠️ Vui lòng bấm <b>⚙️ Cấu hình API</b> ở góc trên và nhập SubDL hoặc OpenSubtitles API Key để lấy danh sách phụ đề chuẩn.</div>`;
       return;
     }
 
-    const subdlKey = localStorage.getItem('subdl_api_key');
-    const osKey = localStorage.getItem('os_api_key');
-    let warnHtml = '';
-    if (!subdlKey && !osKey) {
-      warnHtml = `<div style="background:rgba(245,158,11,0.12);border:1px solid var(--amber);color:#fde68a;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:10px;">
-        ⚠️ Bạn chưa nhập API Key trên thiết bị này nên không hiện tên bản release chi tiết. Bấm <b>⚙️ Cấu hình API</b> ở góc trên để dán Key.
-      </div>`;
+    if (currentSubs.length === 0) {
+      box.innerHTML = '<div class="status">Không tìm thấy phụ đề tiếng Việt cho phim/tập này.</div>';
+      return;
     }
 
-    box.innerHTML = warnHtml + currentSubs.map((s, idx) => {
-      const isOs = s.provider.startsWith('OpenSubtitles');
+    box.innerHTML = currentSubs.map((s, idx) => {
+      const isOs = s.provider === 'OpenSubtitles';
       const dlBtn = s.osFileId
         ? `<button class="btn-sm btn-os" onclick="downloadOsOfficial(${s.osFileId}, '${s.downloadUrl}')">⬇️ Tải Sub (OS)</button>`
         : `<a class="btn-sm ${isOs ? 'btn-os' : 'btn-sub'}" href="${s.downloadUrl}" target="_blank">⬇️ Tải Sub</a>`;
@@ -766,11 +667,27 @@
     }).join('');
   }
 
+  function buildQuickExternalBar(cleanQuery) {
+    const q = encodeURIComponent(cleanQuery);
+    return `
+      <span>Tìm nhanh từ khóa này trên web:</span>
+      <a class="ext-link" href="https://knaben.org/search/${q}/0/1/seeders" target="_blank">🔎 Knaben</a>
+      <a class="ext-link" href="https://thepiratebay.org/search.php?q=${q}" target="_blank">🏴‍☠️ TPB</a>
+      <a class="ext-link" href="https://en.yts.lu/browse-movies?keyword=${q}" target="_blank">🎬 YTS</a>
+      <a class="ext-link" href="https://ext.to/browse/?q=${q}" target="_blank">⚡ EXT</a>
+      <a class="ext-link" href="https://1337x.to/sort-search/${q}/seeders/desc/1/" target="_blank">🧲 1337x</a>
+    `;
+  }
+
   function selectSubtitle(idx, autoSwitchMobile = false) {
     selectedSubIndex = idx;
     const sub = currentSubs[idx];
+    const cleanSearchTerm = sub.release.replace(/\.(srt|zip|ass|vtt|vi|vie)$/i, '').replace(/\./g, ' ');
+
     document.getElementById('matchText').innerHTML = `🎯 Đang khớp với sub: <b>${sub.release}</b>`;
+    document.getElementById('quickExtLinks').innerHTML = buildQuickExternalBar(cleanSearchTerm);
     document.getElementById('matchBanner').classList.add('show');
+
     renderSubtitles();
     renderTorrents();
 
@@ -791,11 +708,9 @@
     const subUpper = sub.release.toUpperCase();
     const torUpper = tor.title.toUpperCase();
 
-    // 1. Trùng tên nhóm phát hành (VD: BTM, YTS, FLUX, QxR...)
     const sameGroup = sub.group && tor.group && (tor.group.includes(sub.group) || sub.group.includes(tor.group));
     if (sameGroup) return { matchType: 'exact', score: 100 };
 
-    // 2. Trùng từ khóa đặc trưng trong tên file (VD: iT.WEB-DL, AMZN, DDP5.1...)
     const tokens = subUpper.split(/[\s.\-_[\]()]+/).filter(w => w.length >= 3 && !['2024','2025','2026','1080P','2160P','720P','X264','X265','H264','H265','AAC','VIE','SRT'].includes(w));
     let tokenHits = 0;
     tokens.forEach(tk => { if (torUpper.includes(tk)) tokenHits++; });
@@ -876,7 +791,15 @@
     document.getElementById('mobTorCount').innerText = totalShown;
 
     if (totalShown === 0) {
-      box.innerHTML = '<div class="status">Không có bản torrent nào khớp với bộ lọc hiện tại (≥ 720p).</div>';
+      const fallbackQuery = selectedSub
+        ? selectedSub.release.replace(/\.(srt|zip|ass|vtt|vi|vie)$/i, '').replace(/\./g, ' ')
+        : currentTitle;
+      box.innerHTML = `
+        <div class="status">
+          Không tìm thấy bản ≥ 720p trực tiếp trên Torrentio/TorrentsDB theo bộ lọc hiện tại.
+          ${fallbackQuery ? `<div class="quick-ext" style="justify-content:center;margin-top:12px;border:none;">${buildQuickExternalBar(fallbackQuery)}</div>` : ''}
+        </div>
+      `;
     } else {
       box.innerHTML = finalHtml;
     }
@@ -884,7 +807,7 @@
 
   function copyMagnet(link) {
     navigator.clipboard.writeText(link);
-    alert('Đã copy Magnet Link!');
+    alert('Đã copy Magnet Link (kèm 12 trackers)!');
   }
 </script>
 </body>
