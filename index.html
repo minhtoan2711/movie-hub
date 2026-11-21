@@ -228,6 +228,7 @@
   let mediaType = 'movie';
   let currentImdbId = null;
   let currentTitle = '';
+  let currentYear = '';
   let currentSubs = [];
   let currentTorrents = [];
   let selectedSubIndex = null;
@@ -369,6 +370,11 @@
     return null;
   }
 
+  function extractCleanYear(releaseInfo) {
+    const match = String(releaseInfo || '').match(/\b(19\d{2}|20\d{2})\b/);
+    return match ? match[1] : '';
+  }
+
   // 1. Nhận diện phim & lấy IMDb ID từ Cinemeta
   async function searchAll() {
     const query = document.getElementById('queryInput').value.trim();
@@ -397,39 +403,44 @@
       if (metas.length > 0) {
         renderMovieChips(metas);
         const first = metas[0];
-        await loadByImdb(first.imdb_id, first.name || query);
+        const yr = extractCleanYear(first.releaseInfo || first.year);
+        await loadByImdb(first.imdb_id, first.name || query, yr);
       } else {
-        await loadByImdb(null, query);
+        await loadByImdb(null, query, '');
       }
     } catch (err) {
-      await loadByImdb(null, query);
+      await loadByImdb(null, query, '');
     }
   }
 
   function renderMovieChips(metas) {
     const box = document.getElementById('movieList');
-    box.innerHTML = metas.slice(0, 10).map((m, idx) => `
-      <div class="movie-chip ${idx === 0 ? 'active' : ''}" onclick="selectMovieChip('${m.imdb_id}', '${(m.name || '').replace(/'/g, "\\'")}', this)">
-        ${m.type === 'series' ? '📺' : '🎬'} ${m.name} (${m.releaseInfo || m.year || '?'})
-      </div>
-    `).join('');
+    box.innerHTML = metas.slice(0, 10).map((m, idx) => {
+      const yr = extractCleanYear(m.releaseInfo || m.year);
+      return `
+        <div class="movie-chip ${idx === 0 ? 'active' : ''}" onclick="selectMovieChip('${m.imdb_id}', '${(m.name || '').replace(/'/g, "\\'")}', '${yr}', this)">
+          ${m.type === 'series' ? '📺' : '🎬'} ${m.name} (${m.releaseInfo || m.year || '?'})
+        </div>
+      `;
+    }).join('');
   }
 
-  async function selectMovieChip(imdbId, title, el) {
+  async function selectMovieChip(imdbId, title, year, el) {
     document.querySelectorAll('.movie-chip').forEach(c => c.classList.remove('active'));
     el.classList.add('active');
-    await loadByImdb(imdbId, title);
+    await loadByImdb(imdbId, title, year);
   }
 
   async function reloadCurrentMovie() {
     if (currentTitle || currentImdbId) {
-      await loadByImdb(currentImdbId, currentTitle);
+      await loadByImdb(currentImdbId, currentTitle, currentYear);
     }
   }
 
-  async function loadByImdb(imdbId, title) {
+  async function loadByImdb(imdbId, title, year = '') {
     currentImdbId = imdbId;
     currentTitle = title;
+    currentYear = year;
     selectedSubIndex = null;
     document.getElementById('matchBanner').classList.remove('show');
     document.getElementById('subContainer').innerHTML = '<div class="status">⏳ Đang tải phụ đề từ SubDL & OpenSubtitles...</div>';
@@ -497,7 +508,7 @@
       }
 
       const res = await fetch(endpoint, {
-        headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub StremioEdition v5.0' }
+        headers: { 'Api-Key': osKey, 'User-Agent': 'MovieSubHub StremioEdition v5.2' }
       });
       if (!res.ok) return [];
       const json = await res.json();
@@ -529,7 +540,7 @@
     try {
       const res = await fetch('https://api.opensubtitles.com/api/v1/download', {
         method: 'POST',
-        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub StremioEdition v5.0' },
+        headers: { 'Api-Key': osKey, 'Content-Type': 'application/json', 'User-Agent': 'MovieSubHub StremioEdition v5.2' },
         body: JSON.stringify({ file_id: fileId })
       });
       const data = await res.json();
@@ -540,7 +551,7 @@
     }
   }
 
-  // Bộ đọc tổng quát cho Stremio Addon Stream (hỗ trợ cả Torrentio & TorrentsDB)
+  // Bộ đọc tổng quát cho Stremio Addon Stream (Torrentio & TorrentsDB)
   function parseStremioStream(st, addonLabel) {
     if (!st || !st.infoHash) return null;
     const rawTitle = st.title || st.description || '';
@@ -553,16 +564,13 @@
     const info = parseReleaseInfo(`${fileName} ${rawName}`);
     if (info.isCam || info.resolution === 'OTHER') return null;
 
-    // Trích xuất số lượng Seed (hỗ trợ nhiều kiểu ký tự của Torrentio & TorrentsDB)
     const seedMatch = combinedText.match(/(?:👤|👥|Seeds?:?)\s*(\d+)/i);
     const seeds = seedMatch ? parseInt(seedMatch[1]) : 0;
 
-    // Trích xuất dung lượng file (GB / MB / TB)
     const sizeMatch = combinedText.match(/(?:💾|📦|Size:?)\s*([\d.]+\s*(?:TB|GB|MB|GiB|MiB))/i)
                    || combinedText.match(/([\d.]+\s*(?:TB|GB|MB|GiB|MiB))/i);
     const sizeStr = sizeMatch ? sizeMatch[1].trim() : '?';
 
-    // Trích xuất tên tracker nguồn (nếu có sau biểu tượng ⚙️ hoặc cuối dòng)
     const trackerMatch = combinedText.match(/(?:⚙️|🔎)\s*([^\n⚙️]+)/);
     const subTracker = trackerMatch ? trackerMatch[1].trim() : '';
 
@@ -667,25 +675,43 @@
     }).join('');
   }
 
-  function buildQuickExternalBar(cleanQuery) {
-    const q = encodeURIComponent(cleanQuery);
+  // Tạo từ khóa gọn: Tên phim + Năm (hoặc SxxExx) + Nguồn (BluRay / WEB)
+  function buildCompactSearchQuery(sub = null) {
+    const parts = [currentTitle];
+    if (mediaType === 'tv') {
+      const sPad = String(parseInt(document.getElementById('seasonInput').value) || 1).padStart(2, '0');
+      const ePad = String(parseInt(document.getElementById('episodeInput').value) || 1).padStart(2, '0');
+      parts.push(`S${sPad}E${ePad}`);
+    } else if (currentYear) {
+      parts.push(currentYear);
+    }
+
+    if (sub) {
+      if (sub.source === 'BLURAY') parts.push('BluRay');
+      else if (sub.source === 'WEB-DL') parts.push('WEB');
+    }
+
+    return parts.filter(Boolean).join(' ').trim();
+  }
+
+  // Phương án 2: Chỉ giữ 3 nguồn web ổn định, không bị chặn tại VN (Knaben, TPB, EXT)
+  function buildQuickExternalBar(sub = null) {
+    const compactQuery = buildCompactSearchQuery(sub);
+    const q = encodeURIComponent(compactQuery);
     return `
-      <span>Tìm nhanh từ khóa này trên web:</span>
+      <span>Tìm trên web (<b>${compactQuery}</b>):</span>
       <a class="ext-link" href="https://knaben.org/search/${q}/0/1/seeders" target="_blank">🔎 Knaben</a>
       <a class="ext-link" href="https://thepiratebay.org/search.php?q=${q}" target="_blank">🏴‍☠️ TPB</a>
-      <a class="ext-link" href="https://en.yts.lu/browse-movies?keyword=${q}" target="_blank">🎬 YTS</a>
       <a class="ext-link" href="https://ext.to/browse/?q=${q}" target="_blank">⚡ EXT</a>
-      <a class="ext-link" href="https://1337x.to/sort-search/${q}/seeders/desc/1/" target="_blank">🧲 1337x</a>
     `;
   }
 
   function selectSubtitle(idx, autoSwitchMobile = false) {
     selectedSubIndex = idx;
     const sub = currentSubs[idx];
-    const cleanSearchTerm = sub.release.replace(/\.(srt|zip|ass|vtt|vi|vie)$/i, '').replace(/\./g, ' ');
 
     document.getElementById('matchText').innerHTML = `🎯 Đang khớp với sub: <b>${sub.release}</b>`;
-    document.getElementById('quickExtLinks').innerHTML = buildQuickExternalBar(cleanSearchTerm);
+    document.getElementById('quickExtLinks').innerHTML = buildQuickExternalBar(sub);
     document.getElementById('matchBanner').classList.add('show');
 
     renderSubtitles();
@@ -791,13 +817,10 @@
     document.getElementById('mobTorCount').innerText = totalShown;
 
     if (totalShown === 0) {
-      const fallbackQuery = selectedSub
-        ? selectedSub.release.replace(/\.(srt|zip|ass|vtt|vi|vie)$/i, '').replace(/\./g, ' ')
-        : currentTitle;
       box.innerHTML = `
         <div class="status">
           Không tìm thấy bản ≥ 720p trực tiếp trên Torrentio/TorrentsDB theo bộ lọc hiện tại.
-          ${fallbackQuery ? `<div class="quick-ext" style="justify-content:center;margin-top:12px;border:none;">${buildQuickExternalBar(fallbackQuery)}</div>` : ''}
+          ${currentTitle ? `<div class="quick-ext" style="justify-content:center;margin-top:12px;border:none;">${buildQuickExternalBar(selectedSub)}</div>` : ''}
         </div>
       `;
     } else {
